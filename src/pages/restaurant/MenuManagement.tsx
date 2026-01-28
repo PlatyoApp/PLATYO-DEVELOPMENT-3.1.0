@@ -130,21 +130,16 @@ export const MenuManagement: React.FC = () => {
       console.error('Error loading categories:', categoriesError);
     }
 
-    const { data: productsData } = await supabase
-  .from('products')
-  .select(`
-    id,
-    name,
-    price,
-    is_active,
-    display_order,
-    product_categories (
-      category_id
-    )
-  `)
-  .eq('restaurant_id', restaurant.id)
-  .order('display_order', { ascending: true })
-  .limit(20);
+    const { data: productsData, error: productsError } = await supabase
+      .from('products')
+      .select(`
+        *,
+        product_categories (
+          category_id
+        )
+      `)
+      .eq('restaurant_id', restaurant.id)
+      .order('display_order', { ascending: true });
 
 
     if (productsError) {
