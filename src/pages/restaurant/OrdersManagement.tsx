@@ -520,13 +520,13 @@ export const OrdersManagement: React.FC = () => {
     setShowModal(true);
     setSelectedOrder(null);
     setLoadingOrderDetail(true);
-
-    await ensureCatalogLoaded();
-    const full = await fetchOrderById(orderId);
-
+  
+    const full = await fetchOrderById(orderId, { mode: 'view' }); // sin catálogo
+  
     setLoadingOrderDetail(false);
     if (full) setSelectedOrder(full);
   };
+
 
   const handleEditOrderById = async (orderId: string) => {
     setShowEditOrderModal(true);
