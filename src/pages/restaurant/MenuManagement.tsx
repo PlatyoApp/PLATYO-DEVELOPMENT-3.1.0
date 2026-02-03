@@ -50,6 +50,7 @@ export const MenuManagement: React.FC = () => {
   const { showToast } = useToast();
   const { t } = useLanguage();
 
+  // Paginación: 12 productos por página
   const PAGE_SIZE = 12;
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -58,6 +59,9 @@ export const MenuManagement: React.FC = () => {
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Debounced search term (server-side)
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   const [showProductModal, setShowProductModal] = useState(false);
 
@@ -83,6 +87,20 @@ export const MenuManagement: React.FC = () => {
   const [totalProducts, setTotalProducts] = useState(0);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
+  const currency = restaurant?.settings?.currency || 'USD';
+  const totalPages = Math.max(1, Math.ceil(totalProducts / PAGE_SIZE));
+
+  // Debounce de búsqueda
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+
+  // Reset a página 1 cuando cambien filtros/búsqueda (server-side)
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCategory, debouncedSearchTerm]);
+
   useEffect(() => {
     if (!restaurant) return;
     loadSubscription();
@@ -92,7 +110,7 @@ export const MenuManagement: React.FC = () => {
     if (!restaurant) return;
     loadMenuData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurant, page]);
+  }, [restaurant, page, selectedCategory, debouncedSearchTerm]);
 
   const loadSubscription = async () => {
     if (!restaurant?.id) return;
@@ -115,7 +133,7 @@ export const MenuManagement: React.FC = () => {
   const loadMenuData = async () => {
     if (!restaurant?.id) return;
 
-    // Categories (typically small; keep simple and fast)
+    // Categories (normalmente pocas; ok traerlas completas)
     const { data: categoriesData, error: categoriesError } = await supabase
       .from('categories')
       .select('*')
@@ -130,8 +148,8 @@ export const MenuManagement: React.FC = () => {
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // Lightweight products list: NO variations/ingredients
-    const { data: productsData, error: productsError, count } = await supabase
+    // Base query: listado ligero + conteo exacto
+    let query = supabase
       .from('products')
       .select(
         `
@@ -152,8 +170,23 @@ export const MenuManagement: React.FC = () => {
         { count: 'exact' }
       )
       .eq('restaurant_id', restaurant.id)
-      .order('display_order', { ascending: true })
-      .range(from, to);
+      .order('display_order', { ascending: true });
+
+    // Category filter (server-side) por tabla puente
+    if (selectedCategory !== 'all') {
+      query = query.eq('product_categories.category_id', selectedCategory);
+    }
+
+    // Search (server-side) global en name/description/sku
+    if (debouncedSearchTerm) {
+      // escapamos % y _ para evitar comportamientos raros en LIKE
+      const s = debouncedSearchTerm.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      query = query.or(
+        `name.ilike.%${s}%,description.ilike.%${s}%,sku.ilike.%${s}%`
+      );
+    }
+
+    const { data: productsData, error: productsError, count } = await query.range(from, to);
 
     setLoadingProducts(false);
 
@@ -171,21 +204,6 @@ export const MenuManagement: React.FC = () => {
 
     setProducts(productsWithCategories);
   };
-
-  // Local filtering (on current page)
-  const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (product.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (product.sku && product.sku.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const matchesCategory = selectedCategory === 'all' || product.category_id === selectedCategory;
-
-    return matchesSearch && matchesCategory;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(totalProducts / PAGE_SIZE));
-  const currency = restaurant?.settings?.currency || 'USD';
 
   const getStatusBadge = (status: Product['status']) => {
     switch (status) {
@@ -208,7 +226,7 @@ export const MenuManagement: React.FC = () => {
   };
 
   // ---------------------------
-  // Status changes (no reload all)
+  // Status changes (sin reload completo)
   // ---------------------------
   const handleChangeProductStatus = async (productId: string, newStatus: Product['status']) => {
     try {
@@ -264,7 +282,6 @@ export const MenuManagement: React.FC = () => {
 
         if (updateError) throw updateError;
 
-        // category relation
         if (category_id) {
           const { error: deleteCategoriesError } = await supabase
             .from('product_categories')
@@ -281,7 +298,7 @@ export const MenuManagement: React.FC = () => {
           if (insertCategoryError) throw insertCategoryError;
         }
 
-        // Update list item locally (light fields only)
+        // Update local item (campos ligeros)
         setProducts((prev) =>
           prev.map((p) =>
             p.id === editingProductId
@@ -322,13 +339,10 @@ export const MenuManagement: React.FC = () => {
             product_id: newProduct.id,
             category_id
           });
-
           if (categoryError) throw categoryError;
         }
 
-        // If inserted product belongs on current page, simplest: reload page
-        // (You can also prepend to state, but then pagination count must shift.)
-        setTotalProducts((prev) => prev + 1);
+        // Para mantener consistencia con filtros/paginación server-side: recargamos la página actual
         await loadMenuData();
       }
 
@@ -355,7 +369,7 @@ export const MenuManagement: React.FC = () => {
     const fetchEditingProduct = async () => {
       if (!showProductModal) return;
 
-      // New product: no fetch
+      // Nuevo producto: no fetch
       if (!editingProductId) {
         setEditingProduct(null);
         return;
@@ -427,12 +441,8 @@ export const MenuManagement: React.FC = () => {
           .eq('id', restaurant.id);
       }
 
-      setProducts((prev) => prev.filter((p) => p.id !== productId));
-      setTotalProducts((prev) => Math.max(0, prev - 1));
-
-      // If page becomes empty after delete, go back one page
-      const remaining = filteredProducts.length - 1;
-      if (remaining <= 0 && page > 1) setPage((p) => p - 1);
+      // Recargar para mantener consistencia de conteo + paginación server-side
+      await loadMenuData();
 
       showToast('info', t('productDeletedTitle'), t('productDeletedMessage'), 4000);
       setDeleteConfirm({ show: false, productId: '', productName: '' });
@@ -511,7 +521,6 @@ export const MenuManagement: React.FC = () => {
         if (categoryError) console.error('Error adding category:', categoryError);
       }
 
-      setTotalProducts((prev) => prev + 1);
       await loadMenuData();
 
       showToast(
@@ -527,7 +536,7 @@ export const MenuManagement: React.FC = () => {
   };
 
   // ---------------------------
-  // Archive (no reload all)
+  // Archive
   // ---------------------------
   const handleArchiveProduct = async (productId: string) => {
     try {
@@ -538,7 +547,8 @@ export const MenuManagement: React.FC = () => {
 
       if (error) throw error;
 
-      setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, status: 'archived' } : p)));
+      // Refrescamos por consistencia de filtros server-side (opcional: podrías actualizar local)
+      await loadMenuData();
 
       showToast('info', t('productArchivedTitle'), t('productArchivedMessage'), 4000);
     } catch (error: any) {
@@ -548,90 +558,7 @@ export const MenuManagement: React.FC = () => {
   };
 
   // ---------------------------
-  // Reorder Up/Down (swap display_order)
-  // (Works within current filtered page)
-  // ---------------------------
-  const moveProductUp = async (productId: string) => {
-    const currentIndex = filteredProducts.findIndex((p) => p.id === productId);
-    if (currentIndex <= 0) return;
-
-    const currentProduct = filteredProducts[currentIndex];
-    const previousProduct = filteredProducts[currentIndex - 1];
-
-    try {
-      const { error: error1 } = await supabase
-        .from('products')
-        .update({ display_order: previousProduct.display_order })
-        .eq('id', currentProduct.id);
-
-      if (error1) throw error1;
-
-      const { error: error2 } = await supabase
-        .from('products')
-        .update({ display_order: currentProduct.display_order })
-        .eq('id', previousProduct.id);
-
-      if (error2) throw error2;
-
-      // Update local state without full reload
-      setProducts((prev) => {
-        const map = new Map(prev.map((p) => [p.id, { ...p }]));
-        const a = map.get(currentProduct.id)!;
-        const b = map.get(previousProduct.id)!;
-        const tmp = a.display_order;
-        a.display_order = b.display_order;
-        b.display_order = tmp;
-        return Array.from(map.values()).sort((x, y) => (x.display_order || 0) - (y.display_order || 0));
-      });
-
-      showToast('success', t('orderUpdatedTitle'), t('orderUpdatedMessage'), 2000);
-    } catch (error: any) {
-      console.error('Error reordering product:', error);
-      showToast('error', 'Error', 'No se pudo reordenar el producto');
-    }
-  };
-
-  const moveProductDown = async (productId: string) => {
-    const currentIndex = filteredProducts.findIndex((p) => p.id === productId);
-    if (currentIndex >= filteredProducts.length - 1) return;
-
-    const currentProduct = filteredProducts[currentIndex];
-    const nextProduct = filteredProducts[currentIndex + 1];
-
-    try {
-      const { error: error1 } = await supabase
-        .from('products')
-        .update({ display_order: nextProduct.display_order })
-        .eq('id', currentProduct.id);
-
-      if (error1) throw error1;
-
-      const { error: error2 } = await supabase
-        .from('products')
-        .update({ display_order: currentProduct.display_order })
-        .eq('id', nextProduct.id);
-
-      if (error2) throw error2;
-
-      setProducts((prev) => {
-        const map = new Map(prev.map((p) => [p.id, { ...p }]));
-        const a = map.get(currentProduct.id)!;
-        const b = map.get(nextProduct.id)!;
-        const tmp = a.display_order;
-        a.display_order = b.display_order;
-        b.display_order = tmp;
-        return Array.from(map.values()).sort((x, y) => (x.display_order || 0) - (y.display_order || 0));
-      });
-
-      showToast('success', t('orderUpdatedTitle'), t('orderUpdatedMessage'), 2000);
-    } catch (error: any) {
-      console.error('Error reordering product:', error);
-      showToast('error', 'Error', 'No se pudo reordenar el producto');
-    }
-  };
-
-  // ---------------------------
-  // Drag & drop reorder (within current filtered set)
+  // Drag handlers (NO se modifica lógica de ordenamiento aquí)
   // ---------------------------
   const handleDragStart = (e: React.DragEvent, product: ProductListItem) => {
     setDraggedProduct(product);
@@ -646,49 +573,23 @@ export const MenuManagement: React.FC = () => {
   const handleDrop = async (e: React.DragEvent, targetProduct: ProductListItem) => {
     e.preventDefault();
 
-    if (!draggedProduct || draggedProduct.id === targetProduct.id) {
-      setDraggedProduct(null);
-      return;
-    }
-
-    const draggedIndex = filteredProducts.findIndex((p) => p.id === draggedProduct.id);
-    const targetIndex = filteredProducts.findIndex((p) => p.id === targetProduct.id);
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    try {
-      const reordered = [...filteredProducts];
-      reordered.splice(draggedIndex, 1);
-      reordered.splice(targetIndex, 0, draggedProduct);
-
-      // Update display_order sequentially for just this visible set
-      // (If you need global ordering across pages, we'll adjust strategy.)
-      for (let i = 0; i < reordered.length; i++) {
-        const p = reordered[i];
-        const { error } = await supabase.from('products').update({ display_order: i }).eq('id', p.id);
-        if (error) throw error;
-      }
-
-      // Reflect locally
-      setProducts((prev) => {
-        const map = new Map(prev.map((p) => [p.id, { ...p }]));
-        reordered.forEach((p, idx) => {
-          const item = map.get(p.id);
-          if (item) item.display_order = idx;
-        });
-        return Array.from(map.values()).sort((x, y) => (x.display_order || 0) - (y.display_order || 0));
-      });
-
-      setDraggedProduct(null);
-
-      showToast('success', t('orderUpdatedTitle'), t('productsReorderedMessage'), 2000);
-    } catch (error: any) {
-      console.error('Error reordering products:', error);
-      showToast('error', 'Error', 'No se pudo reordenar los productos');
-      setDraggedProduct(null);
-    }
+    // IMPORTANTE: no implementamos ordenamiento aquí por tu indicación.
+    // Mantengo el "drag" visual pero sin afectar display_order global.
+    // Si prefieres deshabilitarlo totalmente en esta pestaña, lo hacemos.
+    setDraggedProduct(null);
+    showToast('info', 'Info', 'El reordenamiento se gestiona en el menú público (orden global).', 2500);
   };
 
   const handleDragEnd = () => setDraggedProduct(null);
+
+  // Mantengo tus botones Up/Down (si los quieres para orden global aquí, lo hacemos con endpoints dedicados)
+  const moveProductUp = async (_productId: string) => {
+    showToast('info', 'Info', 'El orden global se gestiona en el menú público.', 2500);
+  };
+
+  const moveProductDown = async (_productId: string) => {
+    showToast('info', 'Info', 'El orden global se gestiona en el menú público.', 2500);
+  };
 
   return (
     <div className="p-6">
@@ -725,7 +626,7 @@ export const MenuManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats cards (note: counts are for current page; if you want global counts, we can fetch separate) */}
+      {/* Stats cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
           <div className="flex items-center gap-3">
@@ -746,7 +647,9 @@ export const MenuManagement: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-gray-600">{t('active')}</p>
-              <p className="text-2xl font-bold text-gray-900">{products.filter((p) => p.status === 'active').length}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {products.filter((p) => p.status === 'active').length}
+              </p>
             </div>
           </div>
         </div>
@@ -758,7 +661,9 @@ export const MenuManagement: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-gray-600">{t('outOfStock')}</p>
-              <p className="text-2xl font-bold text-gray-900">{products.filter((p) => p.status === 'out_of_stock').length}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {products.filter((p) => p.status === 'out_of_stock').length}
+              </p>
             </div>
           </div>
         </div>
@@ -770,7 +675,9 @@ export const MenuManagement: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-gray-600">{t('archived')}</p>
-              <p className="text-2xl font-bold text-gray-900">{products.filter((p) => p.status === 'archived').length}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {products.filter((p) => p.status === 'archived').length}
+              </p>
             </div>
           </div>
         </div>
@@ -798,47 +705,26 @@ export const MenuManagement: React.FC = () => {
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            {t('all')} ({products.filter((p) =>
-              p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              (p.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-              (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
-            ).length})
+            {t('all')}
           </button>
 
-          {categories.map((category) => {
-            const categoryProductCount = products.filter((p) => {
-              const matchesSearch =
-                p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (p.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()));
-              return p.category_id === category.id && matchesSearch;
-            }).length;
-
-            return (
-              <button
-                key={category.id}
-                onClick={() => setSelectedCategory(category.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-medium ${
-                  selectedCategory === category.id
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {(category as any).icon && <span>{(category as any).icon}</span>}
-                <span>{category.name}</span>
-                <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs ${
-                  selectedCategory === category.id
-                    ? 'bg-white/20 text-white'
-                    : 'bg-gray-200 text-gray-700'
-                }`}>
-                  {categoryProductCount}
-                </span>
-              </button>
-            );
-          })}
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-medium ${
+                selectedCategory === category.id
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {(category as any).icon && <span>{(category as any).icon}</span>}
+              <span>{category.name}</span>
+            </button>
+          ))}
         </div>
 
-        {searchTerm === '' && filteredProducts.length > 1 && (
+        {searchTerm === '' && products.length > 1 && (
           <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 rounded-lg p-3 border border-blue-100">
             <GripVertical className="w-4 h-4 text-blue-600 flex-shrink-0" />
             <p>
@@ -853,7 +739,7 @@ export const MenuManagement: React.FC = () => {
         <div className="bg-white rounded-lg shadow p-12 text-center text-gray-600">
           Cargando productos...
         </div>
-      ) : filteredProducts.length === 0 ? (
+      ) : products.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -885,7 +771,7 @@ export const MenuManagement: React.FC = () => {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {filteredProducts.map((product) => (
+            {products.map((product) => (
               <div
                 key={product.id}
                 draggable={searchTerm === ''}
@@ -901,6 +787,7 @@ export const MenuManagement: React.FC = () => {
                     : 'border-gray-200 hover:shadow-lg hover:border-blue-300'
                 }`}
               >
+                {/* Image */}
                 <div className="aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-200 relative overflow-hidden">
                   {product.images?.length > 0 ? (
                     <img
@@ -926,6 +813,7 @@ export const MenuManagement: React.FC = () => {
                   )}
                 </div>
 
+                {/* Info */}
                 <div className="p-4">
                   <div className="mb-2">
                     <h3 className="text-lg font-semibold text-gray-900 truncate">
@@ -940,7 +828,7 @@ export const MenuManagement: React.FC = () => {
                     {product.description}
                   </p>
 
-                  {/* Price (precomputed field) */}
+                  {/* Price precomputed */}
                   <div className="mb-4">
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-bold text-gray-900">
@@ -949,6 +837,7 @@ export const MenuManagement: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Actions */}
                   <div className="space-y-2">
                     <div className="flex gap-1">
                       <Button
@@ -958,7 +847,7 @@ export const MenuManagement: React.FC = () => {
                         onClick={() => moveProductUp(product.id)}
                         className="text-blue-600 hover:text-blue-700"
                         title={t('moveUp')}
-                        disabled={filteredProducts[0]?.id === product.id}
+                        disabled={products[0]?.id === product.id}
                       />
                       <Button
                         variant="ghost"
@@ -967,13 +856,16 @@ export const MenuManagement: React.FC = () => {
                         onClick={() => moveProductDown(product.id)}
                         className="text-blue-600 hover:text-blue-700"
                         title={t('moveDown')}
-                        disabled={filteredProducts[filteredProducts.length - 1]?.id === product.id}
+                        disabled={products[products.length - 1]?.id === product.id}
                       />
                       <Button
                         variant="ghost"
                         size="sm"
                         icon={Edit}
-                        onClick={() => handleEditProduct(product)}
+                        onClick={() => {
+                          setEditingProductId(product.id);
+                          setShowProductModal(true);
+                        }}
                         title={t('editProduct')}
                       />
                       <Button
