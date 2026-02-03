@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Save, Globe, Clock, Truck, QrCode, Palette, Bell, MapPin, HelpCircle, Send, Eye, Calendar, Mail, Phone, Building, Store, Megaphone, Upload, Image as ImageIcon, FileText, DollarSign, Star, ChevronDown, ExternalLink } from 'lucide-react';
 import { colombianDepartments, colombianCitiesByDepartment, validateNIT, formatNIT } from '../../utils/colombianCities';
 import { Restaurant } from '../../types';
@@ -76,8 +76,9 @@ export const RestaurantSettings: React.FC = () => {
       setProducts(data || []);
     };
 
-    loadSupportTickets();
-    loadProducts();
+    // Optimización: no cargar tickets/productos hasta que se necesiten
+    if (activeTab === 'support') loadSupportTickets();
+    if (activeTab === 'promo') loadProducts();
 
     if (restaurant) {
       setSupportForm(prev => ({
@@ -86,7 +87,7 @@ export const RestaurantSettings: React.FC = () => {
         contactPhone: restaurant.phone || ''
       }));
     }
-  }, [restaurant]);
+  }, [restaurant, activeTab]);
 
   useEffect(() => {
     if (restaurant) {
@@ -167,7 +168,7 @@ export const RestaurantSettings: React.FC = () => {
     }
   }, [restaurant]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!formData || !restaurant) return;
 
     setLoading(true);
@@ -203,7 +204,9 @@ export const RestaurantSettings: React.FC = () => {
         4000
       );
 
-      window.location.reload();
+      // Evitamos recargar toda la página: el estado local ya refleja los cambios
+      // Si tu AuthContext expone un método para refrescar `restaurant`, puedes llamarlo aquí.
+
     } catch (error) {
       console.error('Error saving settings:', error);
       showToast(
@@ -215,27 +218,41 @@ export const RestaurantSettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [formData, restaurant, showToast, t]);
 
-  const updateFormData = (path: string, value: any) => {
-    if (!formData) return;
+  const updateFormData = useCallback((path: string, value: any) => {
+    setFormData((prev) => {
+      if (!prev) return prev;
 
-    const keys = path.split('.');
-    const newData = { ...formData };
-    let current: any = newData;
+      const keys = path.split('.');
 
-    for (let i = 0; i < keys.length - 1; i++) {
-      if (!current[keys[i]]) {
-        current[keys[i]] = {};
+      // Clonado inmutable por niveles (evita mutaciones profundas y mantiene referencias estables)
+      const next: any = Array.isArray(prev) ? [...(prev as any)] : { ...prev };
+
+      let curPrev: any = prev;
+      let curNext: any = next;
+
+      for (let i = 0; i < keys.length - 1; i++) {
+        const k = keys[i];
+        const prevVal = curPrev?.[k];
+
+        const nextVal = Array.isArray(prevVal)
+          ? [...prevVal]
+          : prevVal && typeof prevVal === 'object'
+            ? { ...prevVal }
+            : {};
+
+        curNext[k] = nextVal;
+        curPrev = prevVal;
+        curNext = nextVal;
       }
-      current = current[keys[i]];
-    }
 
-    current[keys[keys.length - 1]] = value;
-    setFormData(newData);
-  };
+      curNext[keys[keys.length - 1]] = value;
+      return next;
+    });
+  }, []);
 
-  const handleCurrencyChange = async (currency: string) => {
+  const handleCurrencyChange = useCallback(async (currency: string) => {
     if (!formData || !restaurant) return;
 
     updateFormData('settings.currency', currency);
@@ -265,9 +282,9 @@ export const RestaurantSettings: React.FC = () => {
       console.error('Error updating currency:', error);
       showToast('error', t('config_toast_error'), t('config_toast_error1'), 3000);
     }
-  };
+  }, [formData, restaurant, showToast, t, updateFormData]);
 
-  const handleSupportSubmit = async (e: React.FormEvent) => {
+  const handleSupportSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setSupportLoading(true);
 
@@ -346,14 +363,14 @@ export const RestaurantSettings: React.FC = () => {
     } finally {
       setSupportLoading(false);
     }
-  };
+  }, [restaurant, showToast, supportForm, t, user]);
 
-  const handleViewTicketDetails = (ticket: any) => {
+  const handleViewTicketDetails = useCallback((ticket: any) => {
     setSelectedTicket(ticket);
     setShowTicketDetailModal(true);
-  };
+  }, []);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = useCallback((status: string) => {
     switch (status) {
       case 'pending':
         return <Badge variant="warning">{t('status_pending')}</Badge>;
@@ -366,9 +383,9 @@ export const RestaurantSettings: React.FC = () => {
       default:
         return <Badge variant="gray">{t('status_closed_unknown')}</Badge>;
     }
-  };
+  }, [t]);
 
-  const getPriorityBadge = (priority: string) => {
+  const getPriorityBadge = useCallback((priority: string) => {
     switch (priority) {
       case 'urgent':
         return <Badge variant="error">{t('priority_urgent')}</Badge>;
@@ -381,9 +398,9 @@ export const RestaurantSettings: React.FC = () => {
       default:
         return <Badge variant="gray">{t('priority_medium')}</Badge>;
     }
-  };
+  }, [t]);
 
-  const getCategoryName = (category: string) => {
+  const getCategoryName = useCallback((category: string) => {
     const categories: { [key: string]: string } = {
       general: 'Consulta General',
       technical: 'Problema Técnico',
@@ -393,9 +410,9 @@ export const RestaurantSettings: React.FC = () => {
       other: 'Otro'
     };
     return categories[category] || category;
-  };
+  }, []);
 
-  const tabs = [
+  const tabs = useMemo(() => ([
     { id: 'general', name: t('tab_general'), icon: Globe },
     { id: 'hours', name: t('tab_hours'), icon: Clock },
     { id: 'social', name: t('tab_social'), icon: Globe },
@@ -405,7 +422,7 @@ export const RestaurantSettings: React.FC = () => {
     { id: 'theme', name: t('tab_theme'), icon: Palette },
     { id: 'billing', name: t('tab_billing'), icon: FileText },
     { id: 'support', name: t('tab_support'), icon: HelpCircle },
-  ];
+  ]), [t]);
 
   if (!formData) {
     return (
