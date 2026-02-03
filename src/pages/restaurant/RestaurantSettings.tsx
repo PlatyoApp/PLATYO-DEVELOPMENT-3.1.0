@@ -2708,6 +2708,23 @@ export const RestaurantSettings: React.FC = () => {
                     {products.map((product: any) => {
                       const isSelected = validSelectedFeaturedIds.includes(product.id);
                       const canSelect = validSelectedFeaturedIds.length < 5 || isSelected;
+              const selectedFeaturedIds = formData.settings.promo?.featured_product_ids || [];
+
+const productIdSet = useMemo(() => {
+  return new Set(products.map((p: any) => p.id));
+}, [products]);
+
+const validSelectedFeaturedIds = useMemo(() => {
+  return selectedFeaturedIds.filter((id: string) => productIdSet.has(id));
+}, [selectedFeaturedIds, productIdSet]);
+
+// Limpieza automática de IDs inválidos (fuera del render)
+useEffect(() => {
+  if (validSelectedFeaturedIds.length !== selectedFeaturedIds.length) {
+    updateFormData('settings.promo.featured_product_ids', validSelectedFeaturedIds);
+  }
+  // Importante: dependencias para que solo corra cuando cambie la validez
+}, [selectedFeaturedIds.length, validSelectedFeaturedIds.length, updateFormData]); 
               
                       return (
                         <label
