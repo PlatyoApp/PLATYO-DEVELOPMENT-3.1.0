@@ -719,21 +719,6 @@ export const MenuManagement: React.FC = () => {
     setDeleteConfirm({ show: true, productId: product.id, productName: product.name });
   };
 
-  // ====== ✅ ESTADÍSTICAS (RESTauradas) ======
-  const totalCategoriesCount = categories.length;
-  const totalProductsOnPage = products.length;
-
-  const inStockCount = products.reduce((acc, p) => acc + (p.is_available ? 1 : 0), 0);
-
-  const activeCount = products.reduce((acc, p) => acc + (p.status === 'active' ? 1 : 0), 0);
-  const outOfStockCount = products.reduce((acc, p) => acc + (p.status === 'out_of_stock' ? 1 : 0), 0);
-  const draftCount = products.reduce((acc, p) => acc + (p.status === 'draft' ? 1 : 0), 0);
-  const archivedCount = products.reduce((acc, p) => acc + (p.status === 'archived' ? 1 : 0), 0);
-
-  // Nota: como estás paginando server-side, este totalValue es del set cargado (página actual).
-  // Si quieres “valor total de TODO el menú”, habría que pedirlo con agregados (RPC) o traer todos.
-  const totalValue = products.reduce((acc, p) => acc + (Number(p.price) || 0), 0);
-
   // ===== UI =====
   return (
     <div className="p-6">
@@ -767,62 +752,6 @@ export const MenuManagement: React.FC = () => {
           >
             {t('newProduct')}
           </Button>
-        </div>
-      </div>
-
-      {/* ====== ✅ Barra superior de estadísticas (restaurada) ====== */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t('totalProducts') || 'Productos (página)'}</div>
-            <div className="text-lg font-semibold text-gray-900">{totalProductsOnPage}</div>
-            <div className="text-[11px] text-gray-500">
-              {t('totalInDb') || 'Total'}: <strong>{totalProducts}</strong>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t('totalCategories') || 'Categorías'}</div>
-            <div className="text-lg font-semibold text-gray-900">{totalCategoriesCount}</div>
-            <div className="text-[11px] text-gray-500">
-              {selectedCategory === 'all' ? (t('filterAll') || 'Filtro: ALL') : (t('filter') || 'Filtro') + ':'}{' '}
-              <strong>{selectedCategory === 'all' ? 'ALL' : getCategoryName(selectedCategory)}</strong>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t('available') || 'Disponibles'}</div>
-            <div className="text-lg font-semibold text-gray-900">{inStockCount}</div>
-            <div className="text-[11px] text-gray-500">
-              {t('onThisPage') || 'En esta página'}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t('active') || 'Activos'}</div>
-            <div className="text-lg font-semibold text-gray-900">{activeCount}</div>
-            <div className="text-[11px] text-gray-500">
-              {t('draft') || 'Borradores'}: <strong>{draftCount}</strong>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t('outOfStock') || 'Sin stock'}</div>
-            <div className="text-lg font-semibold text-gray-900">{outOfStockCount}</div>
-            <div className="text-[11px] text-gray-500">
-              {t('archived') || 'Archivados'}: <strong>{archivedCount}</strong>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">{t('totalValue') || 'Valor (página)'}</div>
-            <div className="text-lg font-semibold text-gray-900">
-              {formatCurrency(totalValue || 0, currency)}
-            </div>
-            <div className="text-[11px] text-gray-500">
-              {debouncedSearchTerm ? (t('searchApplied') || 'Búsqueda aplicada') : (t('noSearch') || 'Sin búsqueda')}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -971,7 +900,7 @@ export const MenuManagement: React.FC = () => {
                       >
                         <Copy className="w-4 h-4 text-blue-600" />
                       </Button>
-
+                      
                       <Button
                         variant="ghost"
                         size="sm"
