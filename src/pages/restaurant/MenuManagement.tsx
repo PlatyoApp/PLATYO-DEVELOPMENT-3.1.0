@@ -4,16 +4,12 @@ import {
   Plus,
   Pencil as Edit,
   Trash2,
-  Archive,
   AlertCircle,
   Search,
   Package,
-  CheckCircle,
-  ArrowUp,
-  ArrowDown,
-  Copy,
   GripVertical,
-  ExternalLink
+  ExternalLink,
+  Copy
 } from 'lucide-react';
 
 import { Category, Product, Subscription } from '../../types';
@@ -127,24 +123,33 @@ export const MenuManagement: React.FC = () => {
     setCurrentSubscription(data);
   };
 
-  // ====== Cache helpers ======
+  // ====== Cache helpers (ARREGLADO: no rompe si excede cuota) ======
   const saveCache = (payload: { categories: Category[]; products: ProductListItem[]; totalProducts: number }) => {
     if (!restaurant?.id) return;
-    sessionStorage.setItem(
-      cacheKey(restaurant.id),
-      JSON.stringify({
-        ts: Date.now(),
-        page,
-        selectedCategory,
-        search: debouncedSearchTerm,
-        ...payload
-      })
-    );
+    try {
+      sessionStorage.setItem(
+        cacheKey(restaurant.id),
+        JSON.stringify({
+          ts: Date.now(),
+          page,
+          selectedCategory,
+          search: debouncedSearchTerm,
+          ...payload
+        })
+      );
+    } catch (err) {
+      // IMPORTANT: no romper la app por el cache
+      console.warn('[MenuManagement] Cache skipped (quota/storage error):', err);
+    }
   };
 
   const invalidateCache = () => {
     if (!restaurant?.id) return;
-    sessionStorage.removeItem(cacheKey(restaurant.id));
+    try {
+      sessionStorage.removeItem(cacheKey(restaurant.id));
+    } catch {
+      // ignore
+    }
   };
 
   // ====== Menú (server-side search + category + pagination) con cache ======
@@ -152,7 +157,12 @@ export const MenuManagement: React.FC = () => {
     if (!restaurant?.id) return;
 
     const tryLoadFromCache = () => {
-      const raw = sessionStorage.getItem(cacheKey(restaurant.id));
+      let raw: string | null = null;
+      try {
+        raw = sessionStorage.getItem(cacheKey(restaurant.id));
+      } catch {
+        return false;
+      }
       if (!raw) return false;
 
       try {
@@ -333,18 +343,21 @@ export const MenuManagement: React.FC = () => {
   const canReorder = selectedCategory === 'all' && debouncedSearchTerm === '';
 
   const persistDisplayOrders = async (updates: { id: string; display_order: number }[]) => {
-    for (const u of updates) {
-      const { error } = await supabase
+    // En paralelo para que no sea tan lento (y reduzca timeouts)
+    const jobs = updates.map((u) =>
+      supabase
         .from('products')
         .update({ display_order: u.display_order, updated_at: new Date().toISOString() })
-        .eq('id', u.id);
-      if (error) throw error;
-    }
+        .eq('id', u.id)
+    );
+
+    const results = await Promise.all(jobs);
+    const firstError = results.find((r) => r.error)?.error;
+    if (firstError) throw firstError;
   };
 
   const reorderGlobalByInsert = async (draggedId: string, targetId: string, place: 'before' | 'after') => {
-    // Necesitamos el orden global real. Lo más consistente es: pedirlo al servidor (solo ids+display_order).
-    // Esto evita errores por paginación.
+    // Necesitamos el orden global real (ids+display_order).
     if (!restaurant?.id) return;
 
     const { data: allData, error } = await supabase
@@ -382,7 +395,6 @@ export const MenuManagement: React.FC = () => {
 
     const updates = affected.map((x, i) => ({ id: x.id, display_order: originalOrders[i] }));
 
-    // Optimistic: refrescamos la página actual luego de persistir para coherencia
     await persistDisplayOrders(updates);
 
     invalidateCache();
@@ -471,6 +483,68 @@ export const MenuManagement: React.FC = () => {
   };
 
   const handleDragEnd = () => setDraggedProduct(null);
+
+  // ====== DUPLICAR (AÑADIDO) ======
+  const handleDuplicateProduct = async (product: ProductListItem) => {
+    if (!restaurant?.id) return;
+
+    try {
+      // 1) Traer detalle completo del producto a duplicar
+      const { data: full, error: fullError } = await supabase
+        .from('products')
+        .select('*')
+        .eq('id', product.id)
+        .eq('restaurant_id', restaurant.id)
+        .single();
+
+      if (fullError) throw fullError;
+
+      // 2) Calcular nuevo display_order al final
+      const maxDisplayOrder = Math.max(...products.map((p) => (p as any).display_order || 0), -1);
+
+      // 3) Preparar copia (limpiar campos que no deben clonarse)
+      const nowIso = new Date().toISOString();
+      const copyName = `${full.name} (Copia)`;
+
+      const insertPayload: any = {
+        ...full,
+        id: undefined,
+        name: copyName,
+        display_order: maxDisplayOrder + 1,
+        created_at: undefined,
+        updated_at: nowIso
+      };
+
+      // Asegurar restaurant_id
+      insertPayload.restaurant_id = restaurant.id;
+
+      // 4) Insertar el producto duplicado
+      const { data: inserted, error: insertError } = await supabase
+        .from('products')
+        .insert(insertPayload)
+        .select('id')
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 5) Copiar categoría (si existe)
+      if (product.category_id) {
+        // limpia relaciones previas por si tu tabla tiene constraints (normalmente no hace falta, pero es seguro)
+        await supabase.from('product_categories').insert({
+          product_id: inserted.id,
+          category_id: product.category_id
+        });
+      }
+
+      invalidateCache();
+      await loadMenuData();
+
+      showToast('success', 'Duplicado', 'Producto duplicado correctamente', 3000);
+    } catch (error: any) {
+      console.error('Error duplicating product:', error);
+      showToast('error', 'Error', error?.message || 'No se pudo duplicar el producto');
+    }
+  };
 
   // ====== Status / CRUD (igual) ======
   const handleChangeProductStatus = async (productId: string, newStatus: Product['status']) => {
@@ -814,8 +888,18 @@ export const MenuManagement: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
+                    {/* Acciones (AQUÍ se restaura Duplicar) */}
                     <div className="flex gap-1">
                       <Button variant="ghost" size="sm" icon={Edit} onClick={() => handleEditProduct(product)} />
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Copy}
+                        onClick={() => handleDuplicateProduct(product)}
+                        title="Duplicar"
+                      />
+
                       <Button
                         variant="ghost"
                         size="sm"
