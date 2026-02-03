@@ -90,7 +90,7 @@ export const MenuManagement: React.FC = () => {
   const [totalProducts, setTotalProducts] = useState(0);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
-  // ✅ Stats globales solo para ALL (todos los productos)
+  // ====== ✅ Global stats (para ALL sin búsqueda) ======
   const [globalStatsAll, setGlobalStatsAll] = useState<GlobalStats | null>(null);
   const [loadingGlobalStatsAll, setLoadingGlobalStatsAll] = useState(false);
 
@@ -330,52 +330,65 @@ export const MenuManagement: React.FC = () => {
     });
   };
 
-  // ====== ✅ Stats globales (solo ALL, sin búsqueda) ======
+  // ====== ✅ Global stats loader (solo ALL sin búsqueda) ======
   const shouldUseGlobalAllStats = selectedCategory === 'all' && debouncedSearchTerm === '';
 
   useEffect(() => {
     if (!restaurant?.id) return;
 
-    // si no estamos en ALL “puro”, no hace falta mantener stats globales
     if (!shouldUseGlobalAllStats) {
       setGlobalStatsAll(null);
       setLoadingGlobalStatsAll(false);
       return;
     }
 
+    let cancelled = false;
+
+    const countByStatus = async (status?: Product['status']) => {
+      let q = supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('restaurant_id', restaurant.id);
+
+      if (status) q = q.eq('status', status);
+
+      const { count, error } = await q;
+      if (error) throw error;
+
+      // Si count viene null, es un indicador de que algo no está bien (permisos / respuesta)
+      if (count == null) throw new Error('Count was null (check RLS/permissions).');
+
+      return count;
+    };
+
     const loadGlobalAllStats = async () => {
       setLoadingGlobalStatsAll(true);
       try {
-        // Nota: esto NO trae filas; solo count.
-        const base = supabase.from('products');
+        const [total, active, out_of_stock, archived] = await Promise.all([
+          countByStatus(undefined),
+          countByStatus('active'),
+          countByStatus('out_of_stock'),
+          countByStatus('archived')
+        ]);
 
-        const [{ count: total, error: e1 }, { count: active, error: e2 }, { count: out, error: e3 }, { count: arch, error: e4 }] =
-          await Promise.all([
-            base.select('id', { count: 'exact', head: true }).eq('restaurant_id', restaurant.id),
-            base.select('id', { count: 'exact', head: true }).eq('restaurant_id', restaurant.id).eq('status', 'active'),
-            base.select('id', { count: 'exact', head: true }).eq('restaurant_id', restaurant.id).eq('status', 'out_of_stock'),
-            base.select('id', { count: 'exact', head: true }).eq('restaurant_id', restaurant.id).eq('status', 'archived')
-          ]);
+        if (cancelled) return;
 
-        const firstError = e1 || e2 || e3 || e4;
-        if (firstError) throw firstError;
-
-        setGlobalStatsAll({
-          total: total ?? 0,
-          active: active ?? 0,
-          out_of_stock: out ?? 0,
-          archived: arch ?? 0
-        });
+        setGlobalStatsAll({ total, active, out_of_stock, archived });
       } catch (err) {
-        console.error('[MenuManagement] Error loading global ALL stats:', err);
-        // fallback: dejamos null para que use stats de página
+        console.error('[MenuManagement] Global ALL stats failed:', err);
+        if (cancelled) return;
+        // fallback: null => la UI usará stats de página en vez de 0
         setGlobalStatsAll(null);
       } finally {
-        setLoadingGlobalStatsAll(false);
+        if (!cancelled) setLoadingGlobalStatsAll(false);
       }
     };
 
     loadGlobalAllStats();
+
+    return () => {
+      cancelled = true;
+    };
   }, [restaurant?.id, shouldUseGlobalAllStats]);
 
   // ====== UI helpers ======
@@ -839,7 +852,7 @@ export const MenuManagement: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-600">{t('totalProducts')}</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {shouldUseGlobalAllStats && globalStatsAll ? globalStatsAll.total : products.length}
+                    {shouldUseGlobalAllStats ? (globalStatsAll?.total ?? totalProducts) : products.length}
                   </p>
                 </div>
               </div>
@@ -853,8 +866,8 @@ export const MenuManagement: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-600">{t('active')}</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {shouldUseGlobalAllStats && globalStatsAll
-                      ? globalStatsAll.active
+                    {shouldUseGlobalAllStats
+                      ? (globalStatsAll?.active ?? 0)
                       : products.filter(p => p.status === 'active').length}
                   </p>
                 </div>
@@ -869,8 +882,8 @@ export const MenuManagement: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-600">{t('outOfStock')}</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {shouldUseGlobalAllStats && globalStatsAll
-                      ? globalStatsAll.out_of_stock
+                    {shouldUseGlobalAllStats
+                      ? (globalStatsAll?.out_of_stock ?? 0)
                       : products.filter(p => p.status === 'out_of_stock').length}
                   </p>
                 </div>
@@ -885,8 +898,8 @@ export const MenuManagement: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-600">{t('archived')}</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {shouldUseGlobalAllStats && globalStatsAll
-                      ? globalStatsAll.archived
+                    {shouldUseGlobalAllStats
+                      ? (globalStatsAll?.archived ?? 0)
                       : products.filter(p => p.status === 'archived').length}
                   </p>
                 </div>
