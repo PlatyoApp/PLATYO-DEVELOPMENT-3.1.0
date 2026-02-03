@@ -28,8 +28,7 @@ import { OrderProductSelector } from '../../components/restaurant/OrderProductSe
 import { formatCurrency } from '../../utils/currencyUtils';
 
 /**
- * Item ligero para listar en tabla (SIN items).
- * Carga rápida, payload pequeño.
+ * Item ligero para listar en tabla (SIN items)
  */
 type OrderListItem = {
   id: string;
@@ -55,10 +54,9 @@ export const OrdersManagement: React.FC = () => {
   const { restaurant } = useAuth();
   const { showToast } = useToast();
   const { t } = useLanguage();
-
   const currency = restaurant?.settings?.currency || 'USD';
 
-  // ===== Table/List state (paginado) =====
+  // ===== Pagination/List =====
   const ITEMS_PER_PAGE = 10;
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
@@ -66,29 +64,28 @@ export const OrdersManagement: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(totalOrders / ITEMS_PER_PAGE));
   const [loadingOrders, setLoadingOrders] = useState(false);
 
-  // ===== Detail lazy loading =====
+  // ===== Detail lazy =====
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loadingOrderDetail, setLoadingOrderDetail] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
-  // ===== UI filters/search/sort =====
+  // ===== Filters/Search/Sort =====
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'status' | 'total'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
   const [showFilters, setShowFilters] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // ===== Bulk actions =====
+  // ===== Bulk =====
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [bulkAction, setBulkAction] = useState('');
   const [showBulkActions, setShowBulkActions] = useState(false);
 
-  // ===== Create / Edit / Delete =====
+  // ===== Create/Edit/Delete =====
   const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
   const [showEditOrderModal, setShowEditOrderModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -96,7 +93,7 @@ export const OrdersManagement: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
 
-  // ===== Products/Categories (solo necesarios para crear/editar) =====
+  // ===== Products/Categories (for create/edit) =====
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [orderItems, setOrderItems] = useState<Order['items']>([]);
@@ -129,12 +126,21 @@ export const OrdersManagement: React.FC = () => {
   // ===== Helpers =====
   const escapeLike = (s: string) => s.replace(/[%_]/g, (m) => `\\${m}`);
 
-  // Reset a página 1 cuando cambien filtros / búsqueda / orden
+  const getTodayRangeISO = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { startISO: start.toISOString(), endISO: end.toISOString() };
+  };
+
+  // Reset page on filters/search/sort changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, statusFilter, typeFilter, dateFilter, startDate, endDate, sortBy, sortOrder]);
 
-  // ===== Load list paginada =====
+  // Load list page (server-side)
   useEffect(() => {
     if (!restaurant?.id) return;
     loadOrdersPage();
@@ -152,14 +158,14 @@ export const OrdersManagement: React.FC = () => {
     sortOrder
   ]);
 
-  // ===== Load stats (rápido, sin traer todo) =====
+  // Load stats initially (and refresh via events)
   useEffect(() => {
     if (!restaurant?.id) return;
-    loadOrderStatsFast();
+    loadOrderStatsAccurate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.id]);
 
-  // ===== Load products/categories on demand (solo cuando abras create/edit) =====
+  // Load products/categories on demand (open create/edit)
   useEffect(() => {
     if (!restaurant?.id) return;
     if (!showCreateOrderModal && !showEditOrderModal) return;
@@ -167,6 +173,9 @@ export const OrdersManagement: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.id, showCreateOrderModal, showEditOrderModal]);
 
+  // =============================
+  // 1) LIST (fast)
+  // =============================
   const loadOrdersPage = async () => {
     if (!restaurant?.id) return;
 
@@ -199,11 +208,9 @@ export const OrdersManagement: React.FC = () => {
       )
       .eq('restaurant_id', restaurant.id);
 
-    // Filters server-side
     if (statusFilter !== 'all') query = query.eq('status', statusFilter);
     if (typeFilter !== 'all') query = query.eq('order_type', typeFilter);
 
-    // Date filter server-side
     if (dateFilter !== 'all') {
       const today = new Date();
       const start = new Date(today);
@@ -238,7 +245,6 @@ export const OrdersManagement: React.FC = () => {
       }
     }
 
-    // Search server-side (order_number / customer / phone)
     if (searchTerm.trim()) {
       const s = escapeLike(searchTerm.trim());
       query = query.or(
@@ -246,17 +252,14 @@ export const OrdersManagement: React.FC = () => {
       );
     }
 
-    // Sorting server-side
     if (sortBy === 'date') {
       query = query.order('created_at', { ascending: sortOrder === 'asc' });
     } else if (sortBy === 'status') {
       query = query.order('status', { ascending: sortOrder === 'asc' }).order('created_at', { ascending: false });
     } else if (sortBy === 'total') {
-      // por si tu columna real es total_amount, preferimos total si existe
       query = query.order('total', { ascending: sortOrder === 'asc', nullsFirst: false }).order('created_at', { ascending: false });
     }
 
-    // Pagination
     const { data, error, count } = await query.range(from, to);
 
     setLoadingOrders(false);
@@ -290,53 +293,111 @@ export const OrdersManagement: React.FC = () => {
     }));
 
     setOrders(mapped);
-    setSelectedOrders([]); // limpia selección al cambiar página/filtros
+    setSelectedOrders([]);
   };
 
-  const loadOrderStatsFast = async () => {
+  // =============================
+  // 2) STATS (accurate, fast)
+  // =============================
+  const loadOrderStatsAccurate = async () => {
     if (!restaurant?.id) return;
 
-    const statuses: Order['status'][] = ['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'];
+    try {
+      const statuses: Order['status'][] = ['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'];
 
-    const totalJob = supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('restaurant_id', restaurant.id);
+      const totalJob = supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('restaurant_id', restaurant.id);
 
-    const statusJobs = statuses.map((st) =>
-      supabase
+      const statusJobs = statuses.map((st) =>
+        supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('restaurant_id', restaurant.id)
+          .eq('status', st)
+      );
+
+      // Today stats: orders + revenue delivered today
+      const { startISO, endISO } = getTodayRangeISO();
+
+      const todayOrdersJob = supabase
         .from('orders')
         .select('id', { count: 'exact', head: true })
         .eq('restaurant_id', restaurant.id)
-        .eq('status', st)
-    );
+        .gte('created_at', startISO)
+        .lte('created_at', endISO);
 
-    const [totalRes, ...res] = await Promise.all([totalJob, ...statusJobs]);
+      // revenue today (delivered)
+      const todayDeliveredTotalJob = supabase
+        .from('orders')
+        .select('total, total_amount')
+        .eq('restaurant_id', restaurant.id)
+        .eq('status', 'delivered')
+        .gte('created_at', startISO)
+        .lte('created_at', endISO);
 
-    const total = totalRes.count ?? 0;
-    const counts: Record<string, number> = {};
-    statuses.forEach((st, i) => (counts[st] = res[i].count ?? 0));
+      // average order value for delivered (global)
+      const deliveredTotalsJob = supabase
+        .from('orders')
+        .select('total, total_amount')
+        .eq('restaurant_id', restaurant.id)
+        .eq('status', 'delivered');
 
-    const completionRate = total ? (counts.delivered / total) * 100 : 0;
+      const [totalRes, ...rest] = await Promise.all([
+        totalJob,
+        ...statusJobs,
+        todayOrdersJob,
+        todayDeliveredTotalJob,
+        deliveredTotalsJob
+      ]);
 
-    setOrderStats((prev) => ({
-      ...prev,
-      total,
-      pending: counts.pending,
-      confirmed: counts.confirmed,
-      preparing: counts.preparing,
-      ready: counts.ready,
-      delivered: counts.delivered,
-      cancelled: counts.cancelled,
-      completionRate,
+      const total = totalRes.count ?? 0;
 
-      // Mantengo estos como 0 por rendimiento (ideal: RPC en DB)
-      todayRevenue: prev.todayRevenue ?? 0,
-      todayOrders: prev.todayOrders ?? 0,
-      averageOrderValue: prev.averageOrderValue ?? 0
-    }));
+      const counts: Record<string, number> = {};
+      statuses.forEach((st, i) => {
+        counts[st] = (rest[i] as any)?.count ?? 0;
+      });
+
+      const todayOrdersCount = (rest[statuses.length] as any)?.count ?? 0;
+
+      const todayDeliveredRows = (rest[statuses.length + 1] as any)?.data ?? [];
+      const todayRevenue = todayDeliveredRows.reduce(
+        (sum: number, row: any) => sum + (row.total ?? row.total_amount ?? 0),
+        0
+      );
+
+      const deliveredRows = (rest[statuses.length + 2] as any)?.data ?? [];
+      const deliveredCount = counts.delivered ?? 0;
+      const deliveredSum = deliveredRows.reduce(
+        (sum: number, row: any) => sum + (row.total ?? row.total_amount ?? 0),
+        0
+      );
+      const averageOrderValue = deliveredCount > 0 ? deliveredSum / deliveredCount : 0;
+
+      const completionRate = total ? ((counts.delivered ?? 0) / total) * 100 : 0;
+
+      setOrderStats({
+        total,
+        pending: counts.pending ?? 0,
+        confirmed: counts.confirmed ?? 0,
+        preparing: counts.preparing ?? 0,
+        ready: counts.ready ?? 0,
+        delivered: counts.delivered ?? 0,
+        cancelled: counts.cancelled ?? 0,
+        todayRevenue,
+        todayOrders: todayOrdersCount,
+        averageOrderValue,
+        completionRate
+      });
+    } catch (err) {
+      console.error('Error loading stats:', err);
+    }
   };
 
+  // =============================
+  // 3) Products/Categories
+  // =============================
   const loadProductsAndCategories = async () => {
     if (!restaurant?.id) return;
 
@@ -357,10 +418,63 @@ export const OrdersManagement: React.FC = () => {
     setProducts(productsData || []);
   };
 
-  // ===== Lazy fetch order detail (1 pedido) =====
+  // =============================
+  // 4) ORDER DETAIL (lazy) + FIX product names
+  // =============================
+  const enrichItemsWithCatalog = (items: any[]): any[] => {
+    // Toma product_id y busca en catálogo para tener nombre/variaciones/ingredientes completos
+    // Esto mejora "ver" y especialmente "editar"
+    if (!items || items.length === 0) return [];
+
+    return items.map((item: any, index: number) => {
+      const productFromCatalog = products.find((p) => p.id === item.product_id);
+
+      const productName =
+        item.product_name ||
+        item?.product?.name ||
+        productFromCatalog?.name ||
+        'Producto';
+
+      const variationFromCatalog = productFromCatalog?.variations?.find((v) => v.id === item.variation_id);
+
+      const variationName =
+        item.variation_name ||
+        item?.variation?.name ||
+        variationFromCatalog?.name ||
+        'Variación';
+
+      const variationPrice =
+        item.unit_price ||
+        item?.variation?.price ||
+        variationFromCatalog?.price ||
+        0;
+
+      return {
+        id: item.id || `${item.order_id || 'order'}-${index}`,
+        product_id: item.product_id,
+        product: productFromCatalog
+          ? productFromCatalog
+          : { id: item.product_id, name: productName },
+        variation: {
+          id: item.variation_id,
+          name: variationName,
+          price: variationPrice
+        },
+        quantity: item.quantity || 1,
+        unit_price: item.unit_price || variationPrice || 0,
+        total_price:
+          item.total_price ||
+          (item.unit_price || variationPrice || 0) * (item.quantity || 1),
+        special_notes: item.special_notes || '',
+        selected_ingredients: item.selected_ingredients || []
+      };
+    });
+  };
+
   const fetchOrderById = async (orderId: string): Promise<Order | null> => {
     if (!restaurant?.id) return null;
 
+    // Trae el pedido completo (incluye items JSON)
     const { data, error } = await supabase
       .from('orders')
       .select('*')
@@ -374,19 +488,8 @@ export const OrdersManagement: React.FC = () => {
       return null;
     }
 
-    const items = data.items || [];
-    const mappedItems = items.map((item: any, index: number) => ({
-      id: item.id || `${data.id}-${index}`,
-      product_id: item.product_id,
-      product: { id: item.product_id, name: item.product_name || 'Producto' },
-      variation: { id: item.variation_id, name: item.variation_name || 'Variación', price: item.unit_price || 0 },
-      quantity: item.quantity || 1,
-      unit_price: item.unit_price || 0,
-      price: item.unit_price || 0,
-      total_price: item.total_price || (item.unit_price * item.quantity) || 0,
-      special_notes: item.special_notes || '',
-      selected_ingredients: item.selected_ingredients || []
-    }));
+    const rawItems = data.items || [];
+    const mappedItems = enrichItemsWithCatalog(rawItems);
 
     const full: Order = {
       ...data,
@@ -406,11 +509,19 @@ export const OrdersManagement: React.FC = () => {
     return full;
   };
 
+  const ensureCatalogLoaded = async () => {
+    // Si no hay catálogo cargado, lo cargamos (solo cuando haga falta para ver/editar)
+    if (!restaurant?.id) return;
+    if (products.length > 0 && categories.length > 0) return;
+    await loadProductsAndCategories();
+  };
+
   const handleViewOrder = async (orderId: string) => {
     setShowModal(true);
     setSelectedOrder(null);
     setLoadingOrderDetail(true);
 
+    await ensureCatalogLoaded();
     const full = await fetchOrderById(orderId);
 
     setLoadingOrderDetail(false);
@@ -422,6 +533,7 @@ export const OrdersManagement: React.FC = () => {
     setEditingOrder(null);
     setLoadingOrderDetail(true);
 
+    await ensureCatalogLoaded();
     const full = await fetchOrderById(orderId);
 
     setLoadingOrderDetail(false);
@@ -443,7 +555,9 @@ export const OrdersManagement: React.FC = () => {
     setOrderItems(full.items || []);
   };
 
-  // ===== Status / Badges =====
+  // =============================
+  // 5) Badges / Status
+  // =============================
   const getStatusBadge = (status: Order['status']) => {
     switch (status) {
       case 'pending':
@@ -503,7 +617,9 @@ export const OrdersManagement: React.FC = () => {
     return labels[nextStatus];
   };
 
-  // ===== Quick status update (sin recargar todo, solo la página actual) =====
+  // =============================
+  // 6) Quick / Bulk updates + refresh stats correctly
+  // =============================
   const handleQuickStatusUpdate = async (orderId: string, newStatus: Order['status']) => {
     const { error } = await supabase
       .from('orders')
@@ -516,14 +632,15 @@ export const OrdersManagement: React.FC = () => {
       return;
     }
 
-    // Optimista: actualiza local
+    // Optimistic local update
     setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o)));
-    loadOrderStatsFast();
+
+    // Refresh stats (fix #2)
+    loadOrderStatsAccurate();
 
     showToast('success', t('statusUpdatedTitle'), t('orderStatusMarkedSuccess'), 3000);
   };
 
-  // ===== Bulk actions =====
   const handleBulkAction = async () => {
     if (!bulkAction || selectedOrders.length === 0) return;
 
@@ -545,7 +662,7 @@ export const OrdersManagement: React.FC = () => {
     setShowBulkActions(false);
 
     await loadOrdersPage();
-    loadOrderStatsFast();
+    loadOrderStatsAccurate(); // fix #2
   };
 
   const toggleOrderSelection = (orderId: string) => {
@@ -557,40 +674,9 @@ export const OrdersManagement: React.FC = () => {
     else setSelectedOrders(orders.map((o) => o.id));
   };
 
-  // ===== Print / WhatsApp requieren detalle (items) => lazy =====
-  const printTicket = (order: Order) => {
-    // (conservo tu lógica anterior; aquí solo la dejo “tal cual” de forma resumida)
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    const html = `
-      <html>
-        <head><title>${t('ticketTitle')} - ${order.order_number}</title></head>
-        <body>
-          <h2>${restaurant?.name}</h2>
-          <p>${t('orderNumberLabel')}: ${order.order_number}</p>
-          <p>${t('dateLabel')}: ${new Date(order.created_at).toLocaleString('es-CO')}</p>
-          <hr/>
-          ${order.items
-            .map(
-              (it) => `
-                <div style="display:flex;justify-content:space-between;">
-                  <span>${it.quantity} x ${it.product.name} (${it.variation.name})</span>
-                  <strong>${formatCurrency(it.total_price, currency)}</strong>
-                </div>
-              `
-            )
-            .join('')}
-          <hr/>
-          <p><strong>${t('totalLabel')}:</strong> ${formatCurrency(order.total, currency)}</p>
-        </body>
-      </html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.onload = () => setTimeout(() => printWindow.print(), 250);
-  };
-
+  // =============================
+  // 7) WhatsApp: needs detail => lazy (and keep behavior)
+  // =============================
   const generateWhatsAppMessage = (order: Order) => {
     const restaurantName = restaurant?.name || t('restaurantDefaultName');
     const orderNumber = order.order_number;
@@ -602,18 +688,34 @@ export const OrdersManagement: React.FC = () => {
 
     message += `*${t('customerSectionTitle')}:*\n`;
     message += `- *${t('nameLabel')}:* ${order.customer.name}\n`;
-    message += `- *${t('phone_label')}:* ${order.customer.phone}\n\n`;
+    message += `- *${t('phone_label')}:* ${order.customer.phone}\n`;
+    if (order.customer.email) message += `- *${t('emailLabel')}:* ${order.customer.email}\n`;
+    message += `\n`;
 
     message += `*${t('productsSectionTitle')}:*\n`;
     order.items.forEach((item, index) => {
-      message += `${index + 1}. *${item.product.name}* (${item.variation.name}) x${item.quantity}\n`;
+      const itemTotal = formatCurrency(item.total_price || (item.unit_price * item.quantity), currency);
+      message += `${index + 1}. *${item.product.name}*\n`;
+      message += `   - *${t('variationLabel')}:* ${item.variation.name}\n`;
+      message += `   - *${t('quantityLabel')}:* ${item.quantity}\n`;
+      message += `   - *${t('priceLabel')}:* ${itemTotal}\n`;
+      if (item.special_notes) message += `   - *${t('noteLabel')}:* ${item.special_notes}\n`;
+      message += `\n`;
     });
 
-    message += `\n*${t('totalLabel')}:* ${formatCurrency(order.total, currency)}\n`;
+    message += `*${t('orderSummaryTitle')}:*\n`;
+    message += `- *${t('subtotalLabel')}:* ${formatCurrency(order.subtotal, currency)}\n`;
+    if (order.delivery_cost && order.delivery_cost > 0) {
+      message += `- *${t('deliveryLabel')}:* ${formatCurrency(order.delivery_cost, currency)}\n`;
+    }
+    message += `- *${t('totalLabel')}:* ${formatCurrency(order.total, currency)}\n\n`;
+    message += `*${t('thankYouForOrder')}*`;
+
     return encodeURIComponent(message);
   };
 
   const sendWhatsAppMessageById = async (orderId: string) => {
+    await ensureCatalogLoaded();
     const full = await fetchOrderById(orderId);
     if (!full) return;
 
@@ -640,8 +742,358 @@ export const OrdersManagement: React.FC = () => {
     showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
   };
 
-  // ===== Delete =====
+  // =============================
+  // 8) PRINT TICKET (keep EXACT design)  ✅ FIX #1
+  // =============================
+  const printTicket = (order: Order) => {
+    if (!restaurant) return;
+
+    const billing = restaurant.settings?.billing;
+    const subtotal = order.subtotal;
+    const iva = billing?.responsableIVA ? subtotal * 0.19 : 0;
+    const ipc = billing?.aplicaIPC ? subtotal * ((billing?.porcentajeIPC || 8) / 100) : 0;
+    const propina = billing?.aplicaPropina ? subtotal * 0.10 : 0;
+    const total = order.total;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    // === TU DISEÑO ORIGINAL (sin cambios) ===
+    const ticketHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${t('ticketTitle')} - ${order.order_number}</title>
+          <style>
+            @media print {
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
+              body {
+                margin: 0;
+                padding: 0;
+              }
+            }
+
+            html, body {
+              width: 80mm;
+              margin: 0;
+              padding: 0;
+              background: white;
+            }
+
+            body {
+              font-family: 'Courier New', monospace;
+              font-size: 12px;
+              line-height: 1.4;
+              padding: 10px;
+              box-sizing: border-box;
+            }
+
+            .ticket-header {
+              text-align: center;
+              border-bottom: 2px dashed #333;
+              padding-bottom: 10px;
+              margin-bottom: 10px;
+            }
+
+            .logo {
+              max-width: 120px;
+              max-height: 80px;
+              margin: 0 auto 10px;
+            }
+
+            .restaurant-name {
+              font-size: 16px;
+              font-weight: bold;
+              text-transform: uppercase;
+              margin-bottom: 5px;
+            }
+
+            .info-line {
+              font-size: 10px;
+              margin: 2px 0;
+            }
+
+            .section {
+              margin: 10px 0;
+              padding: 5px 0;
+            }
+
+            .section-title {
+              font-weight: bold;
+              text-transform: uppercase;
+              border-bottom: 1px solid #333;
+              margin-bottom: 5px;
+            }
+
+            .order-info {
+              margin: 10px 0;
+            }
+
+            .order-info-line {
+              display: flex;
+              justify-content: space-between;
+              margin: 3px 0;
+              font-size: 11px;
+            }
+
+            .items-table {
+              width: 100%;
+              margin: 10px 0;
+            }
+
+            .item-row {
+              display: flex;
+              justify-content: space-between;
+              margin: 5px 0;
+              font-size: 11px;
+            }
+
+            .item-name {
+              flex: 1;
+              padding-right: 10px;
+            }
+
+            .item-qty {
+              width: 30px;
+              text-align: center;
+            }
+
+            .item-price {
+              width: 70px;
+              text-align: right;
+            }
+
+            .item-total {
+              width: 80px;
+              text-align: right;
+              font-weight: bold;
+            }
+
+            .totals {
+              border-top: 1px solid #333;
+              margin-top: 10px;
+              padding-top: 5px;
+            }
+
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              margin: 3px 0;
+              font-size: 11px;
+            }
+
+            .total-row.final {
+              font-size: 14px;
+              font-weight: bold;
+              border-top: 2px solid #333;
+              padding-top: 5px;
+              margin-top: 5px;
+            }
+
+            .footer {
+              text-align: center;
+              border-top: 2px dashed #333;
+              padding-top: 10px;
+              margin-top: 10px;
+              font-size: 10px;
+            }
+
+            .dian-info {
+              font-size: 9px;
+              text-align: center;
+              margin: 5px 0;
+            }
+
+            .message {
+              font-size: 11px;
+              font-style: italic;
+              margin: 10px 0;
+              text-align: center;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="ticket-header">
+            ${billing?.mostrarLogoEnTicket && billing?.logoTicket ? `<img src="${billing.logoTicket}" alt="Logo" class="logo">` : ''}
+
+            <div class="restaurant-name">${billing?.nombreComercial || restaurant.name}</div>
+            ${billing?.razonSocial ? `<div class="info-line">${billing.razonSocial}</div>` : ''}
+            ${billing?.nit ? `<div class="info-line">NIT: ${billing.nit}</div>` : ''}
+            ${billing?.direccion ? `<div class="info-line">${billing.direccion}</div>` : ''}
+            ${
+              billing?.ciudad && billing?.departamento
+                ? `<div class="info-line">${billing.ciudad}, ${billing.departamento}</div>`
+                : billing?.ciudad
+                  ? `<div class="info-line">${billing.ciudad}</div>`
+                  : ''
+            }
+            ${billing?.telefono ? `<div class="info-line">${t('phone_label')}: ${billing.telefono}</div>` : ''}
+            ${billing?.correo ? `<div class="info-line">${t('emailLabel')}: ${billing.correo}</div>` : ''}
+
+            ${
+              billing?.tieneResolucionDIAN && billing?.numeroResolucionDIAN
+                ? `
+                  <div class="dian-info">
+                    ${t('dianResolutionNumber')} ${billing.numeroResolucionDIAN}<br>
+                    ${t('dateLabel')}: ${billing.fechaResolucion ? new Date(billing.fechaResolucion).toLocaleDateString('es-CO') : ''}<br>
+                    ${t('rangeLabel')}: ${billing.rangoNumeracionDesde || ''} - ${billing.rangoNumeracionHasta || ''}
+                  </div>
+                `
+                : ''
+            }
+
+            ${
+              billing?.regimenTributario
+                ? `
+                  <div class="info-line">
+                    ${
+                      billing.regimenTributario === 'simple'
+                        ? t('taxRegimeSimple')
+                        : billing.regimenTributario === 'comun'
+                          ? t('taxRegimeCommon')
+                          : t('taxRegimeNoIva')
+                    }
+                  </div>
+                `
+                : ''
+            }
+          </div>
+
+          <div class="order-info">
+            <div class="order-info-line">
+              <span><strong>${t('orderLabel')}:</strong></span>
+              <span>${order.order_number}</span>
+            </div>
+            <div class="order-info-line">
+              <span><strong>${t('dateLabel')}:</strong></span>
+              <span>${new Date(order.created_at).toLocaleString('es-CO')}</span>
+            </div>
+            <div class="order-info-line">
+              <span><strong>${t('orderType')}:</strong></span>
+              <span>${
+                order.order_type === 'delivery'
+                  ? t('deliveryOrderType')
+                  : order.order_type === 'pickup'
+                    ? t('pickupOrderType')
+                    : `${t('tableOrderType')} ${order.table_number || ''}`
+              }</span>
+            </div>
+            <div class="order-info-line">
+              <span><strong>${t('customerLabel')}:</strong></span>
+              <span>${order.customer.name}</span>
+            </div>
+            <div class="order-info-line">
+              <span><strong>${t('phone_label')}:</strong></span>
+              <span>${order.customer.phone}</span>
+            </div>
+            ${
+              order.delivery_address
+                ? `
+                  <div class="order-info-line">
+                    <span><strong>${t('addressLabel')}:</strong></span>
+                    <span>${order.delivery_address}</span>
+                  </div>
+                `
+                : ''
+            }
+          </div>
+
+          <div class="section">
+            <div class="section-title">${t('productsSectionTitle')}</div>
+            <div class="items-table">
+              ${order.items.map(item => {
+                const unitPrice = (item.total_price || 0) / (item.quantity || 1);
+                return `
+                <div class="item-row">
+                  <div class="item-name">
+                    ${item.product.name}<br>
+                    <small style="font-size: 9px; color: #666;">${item.variation.name}</small>
+                    ${
+                      item.selected_ingredients && item.selected_ingredients.length > 0
+                        ? `<br><small style="font-size: 9px; color: #0066cc;">+ ${
+                            item.selected_ingredients.map((ing: any) => (typeof ing === 'object' ? ing.name : ing)).join(', ')
+                          }</small>`
+                        : ''
+                    }
+                    ${item.special_notes ? `<br><small style="font-size: 9px; color: #666;">${t('noteLabel')}: ${item.special_notes}</small>` : ''}
+                  </div>
+                  <div class="item-qty">${item.quantity}</div>
+                  <div class="item-price">${formatCurrency(unitPrice, currency)}</div>
+                  <div class="item-total">${formatCurrency(item.total_price || 0, currency)}</div>
+                </div>
+              `;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="totals">
+            <div class="total-row">
+              <span>${t('subtotalLabel')}:</span> <span>${formatCurrency(subtotal, currency)}</span>
+            </div>
+            ${
+              order.delivery_cost && order.delivery_cost > 0
+                ? `<div class="total-row"><span>${t('deliveryLabel')}:</span> <span>${formatCurrency(order.delivery_cost, currency)}</span></div>`
+                : ''
+            }
+            ${
+              billing?.responsableIVA
+                ? `<div class="total-row"><span>${t('ivaLabel')}:</span> <span>${formatCurrency(iva, currency)}</span></div>`
+                : ''
+            }
+            ${
+              billing?.aplicaIPC
+                ? `<div class="total-row"><span>IPC (${billing?.porcentajeIPC || 8}%):</span> <span>${formatCurrency(ipc, currency)}</span></div>`
+                : ''
+            }
+            ${
+              billing?.aplicaPropina
+                ? `<div class="total-row"><span>${t('suggestedTipLabel')}:</span> <span>${formatCurrency(propina, currency)}</span></div>`
+                : ''
+            }
+            <div class="total-row final">
+              <span>${t('totalLabel')}:</span> <span>${formatCurrency(total, currency)}</span>
+            </div>
+            ${
+              billing?.aplicaPropina
+                ? `<div class="total-row" style="font-size: 10px; color: #666; margin-top: 3px;">
+                    <span>${t('totalWithTipLabel')}:</span> <span>${formatCurrency(total + propina, currency)}</span>
+                  </div>`
+                : ''
+            }
+          </div>
+
+          ${
+            billing?.mensajeFinalTicket
+              ? `<div class="message">${billing.mensajeFinalTicket}</div>`
+              : ''
+          }
+
+          <div class="footer">
+            <div>${t('thankYouForPurchase')}</div>
+            <div style="margin-top: 5px;">${new Date().toLocaleString('es-CO')}</div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(ticketHTML);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    };
+  };
+
+  // =============================
+  // 9) Delete
+  // =============================
   const handleDeleteOrder = async (orderId: string) => {
+    await ensureCatalogLoaded();
     const full = await fetchOrderById(orderId);
     if (!full) return;
     setOrderToDelete(full);
@@ -667,16 +1119,17 @@ export const OrdersManagement: React.FC = () => {
 
     showToast('success', t('orderDeletedTitle'), t('orderDeleteSuccess'), 4000);
 
-    // si borraste el último de la página, ajusta página hacia atrás si aplica
     const afterTotal = Math.max(0, totalOrders - 1);
     const afterPages = Math.max(1, Math.ceil(afterTotal / ITEMS_PER_PAGE));
     setCurrentPage((p) => Math.min(p, afterPages));
 
     await loadOrdersPage();
-    loadOrderStatsFast();
+    loadOrderStatsAccurate(); // fix #2
   };
 
-  // ===== Create/Edit helpers =====
+  // =============================
+  // 10) Create/Edit helpers
+  // =============================
   const resetOrderForm = () => {
     setOrderForm({
       customer: { name: '', phone: '+57 ', email: '', address: '', delivery_instructions: '' },
@@ -709,7 +1162,7 @@ export const OrdersManagement: React.FC = () => {
     const newItem = {
       id: `${Date.now()}-${Math.random()}`,
       product_id: product.id,
-      product,
+      product, // <-- importante para mostrar nombre
       variation: { id: variation.id, name: variation.name, price: variation.price },
       quantity,
       unit_price: variation.price + ingredientsExtraCost,
@@ -721,7 +1174,8 @@ export const OrdersManagement: React.FC = () => {
     setOrderItems((prev) => [...prev, newItem]);
   };
 
-  const removeItemFromOrder = (itemId: string) => setOrderItems((prev) => prev.filter((item) => item.id !== itemId));
+  const removeItemFromOrder = (itemId: string) =>
+    setOrderItems((prev) => prev.filter((item) => item.id !== itemId));
 
   const updateItemQuantity = (itemId: string, quantity: number) => {
     if (quantity < 1) return removeItemFromOrder(itemId);
@@ -737,8 +1191,6 @@ export const OrdersManagement: React.FC = () => {
   const generateOrderNumber = async () => {
     if (!restaurant) return '#RES-1001';
 
-    // OJO: esto sigue siendo costoso si hay muchos pedidos.
-    // Ideal: generar con secuencia en DB / RPC.
     const { data: allOrders } = await supabase
       .from('orders')
       .select('order_number')
@@ -768,12 +1220,21 @@ export const OrdersManagement: React.FC = () => {
       return;
     }
 
-    const subtotal = orderItems.reduce((sum, item) => sum + item.total_price, 0);
+    const subtotal = orderItems.reduce((sum, item) => sum + (item.total_price || 0), 0);
     const deliveryCost =
-      orderForm.order_type === 'delivery'
-        ? restaurant.settings?.delivery?.zones?.[0]?.cost || 0
-        : 0;
+      orderForm.order_type === 'delivery' ? restaurant.settings?.delivery?.zones?.[0]?.cost || 0 : 0;
     const total = subtotal + deliveryCost;
+
+    // Para que "ver" siempre tenga nombres, guardamos también nombres en items (si aún no lo haces)
+    const itemsToStore = orderItems.map((it: any) => ({
+      ...it,
+      product_name: it.product?.name,
+      variation_name: it.variation?.name,
+      variation_id: it.variation?.id,
+      unit_price: it.unit_price,
+      quantity: it.quantity,
+      total_price: it.total_price
+    }));
 
     const newOrder = {
       restaurant_id: restaurant.id,
@@ -784,7 +1245,7 @@ export const OrdersManagement: React.FC = () => {
       customer_phone: orderForm.customer.phone,
       customer_email: orderForm.customer.email || null,
       customer_address: orderForm.customer.address || null,
-      items: orderItems,
+      items: itemsToStore,
       subtotal,
       delivery_cost: deliveryCost,
       total,
@@ -805,11 +1266,10 @@ export const OrdersManagement: React.FC = () => {
 
     setShowCreateOrderModal(false);
     resetOrderForm();
-
     showToast('success', t('orderCreatedTitle'), t('orderCreateSuccess'), 4000);
 
     await loadOrdersPage();
-    loadOrderStatsFast();
+    loadOrderStatsAccurate(); // fix #2
   };
 
   const handleUpdateOrder = async () => {
@@ -824,19 +1284,27 @@ export const OrdersManagement: React.FC = () => {
       return;
     }
 
-    const subtotal = orderItems.reduce((sum, item) => sum + item.total_price, 0);
+    const subtotal = orderItems.reduce((sum, item) => sum + (item.total_price || 0), 0);
     const deliveryCost =
-      orderForm.order_type === 'delivery'
-        ? restaurant?.settings?.delivery?.zones?.[0]?.cost || 0
-        : 0;
+      orderForm.order_type === 'delivery' ? restaurant?.settings?.delivery?.zones?.[0]?.cost || 0 : 0;
     const total = subtotal + deliveryCost;
+
+    const itemsToStore = orderItems.map((it: any) => ({
+      ...it,
+      product_name: it.product?.name,
+      variation_name: it.variation?.name,
+      variation_id: it.variation?.id,
+      unit_price: it.unit_price,
+      quantity: it.quantity,
+      total_price: it.total_price
+    }));
 
     const payload = {
       customer_name: orderForm.customer.name,
       customer_phone: orderForm.customer.phone,
       customer_email: orderForm.customer.email || null,
       customer_address: orderForm.customer.address || null,
-      items: orderItems,
+      items: itemsToStore,
       order_type: orderForm.order_type,
       status: orderForm.status,
       delivery_address: orderForm.delivery_address || null,
@@ -864,13 +1332,15 @@ export const OrdersManagement: React.FC = () => {
     showToast('success', t('orderUpdatedTitle'), t('orderUpdateSuccess'), 4000);
 
     await loadOrdersPage();
-    loadOrderStatsFast();
+    loadOrderStatsAccurate(); // fix #2
   };
 
-  // ===== Render =====
+  // =============================
+  // UI
+  // =============================
   return (
     <div className="p-6">
-      {/* Header and Controls */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('orderManagement')}</h1>
 
@@ -899,7 +1369,7 @@ export const OrdersManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards (rápidas) */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow">
           <div className="flex items-start justify-between mb-4">
@@ -913,9 +1383,7 @@ export const OrdersManagement: React.FC = () => {
           </div>
           <div className="flex items-center justify-between pt-3 border-t border-blue-200">
             <span className="text-xs text-blue-700 font-medium">{t('dailySales')}</span>
-            <span className="text-sm font-bold text-green-700">
-              {formatCurrency(orderStats.todayRevenue, currency)}
-            </span>
+            <span className="text-sm font-bold text-green-700">{formatCurrency(orderStats.todayRevenue, currency)}</span>
           </div>
         </div>
 
@@ -985,9 +1453,7 @@ export const OrdersManagement: React.FC = () => {
 
         {showBulkActions && (
           <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg shadow border w-full md:w-auto">
-            <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-              {t('bulkActionLabel')}:
-            </span>
+            <span className="text-sm font-medium text-gray-700 whitespace-nowrap">{t('bulkActionLabel')}:</span>
             <select
               value={bulkAction}
               onChange={(e) => setBulkAction(e.target.value)}
@@ -1111,15 +1577,11 @@ export const OrdersManagement: React.FC = () => {
 
       {/* Order List */}
       {loadingOrders ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center text-gray-600">
-          {t('loading')}...
-        </div>
+        <div className="bg-white rounded-lg shadow p-12 text-center text-gray-600">{t('loading')}...</div>
       ) : orders.length === 0 ? (
         <div className="text-center bg-white p-8 rounded-lg shadow-lg">
           <ShoppingBag className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {t('noOrdersFound')}
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noOrdersFound')}</h3>
           <p className="text-gray-600">{t('adjustFiltersMessage')}</p>
         </div>
       ) : (
@@ -1252,12 +1714,11 @@ export const OrdersManagement: React.FC = () => {
                     </tr>
                   ))}
                 </tbody>
-
               </table>
             </div>
           </div>
 
-          {/* Pagination (server-side) */}
+          {/* Pagination */}
           {totalPages > 1 && (
             <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 mt-4 rounded-lg shadow">
               <div className="flex-1 flex justify-between sm:hidden">
@@ -1283,9 +1744,7 @@ export const OrdersManagement: React.FC = () => {
                     {t('showing')}{' '}
                     <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span>{' '}
                     {t('to')}{' '}
-                    <span className="font-medium">
-                      {Math.min(currentPage * ITEMS_PER_PAGE, totalOrders)}
-                    </span>{' '}
+                    <span className="font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, totalOrders)}</span>{' '}
                     {t('of')}{' '}
                     <span className="font-medium">{totalOrders}</span>{' '}
                     {t('results')}
@@ -1305,7 +1764,6 @@ export const OrdersManagement: React.FC = () => {
 
                     {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                       let pageNum: number;
-
                       if (totalPages <= 5) pageNum = i + 1;
                       else if (currentPage <= 3) pageNum = i + 1;
                       else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
@@ -1317,9 +1775,7 @@ export const OrdersManagement: React.FC = () => {
                           variant={currentPage === pageNum ? 'default' : 'outline'}
                           onClick={() => setCurrentPage(pageNum)}
                           className={`z-10 ${
-                            currentPage === pageNum
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-50'
+                            currentPage === pageNum ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
                           }`}
                         >
                           {pageNum}
@@ -1343,7 +1799,7 @@ export const OrdersManagement: React.FC = () => {
         </>
       )}
 
-      {/* View Order Modal (lazy) */}
+      {/* View Modal */}
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
@@ -1354,7 +1810,6 @@ export const OrdersManagement: React.FC = () => {
           <div className="p-6 text-sm text-gray-600">Cargando pedido...</div>
         ) : selectedOrder ? (
           <div className="space-y-6">
-            {/* Order Info */}
             <div>
               <h3 className="font-medium text-gray-900 mb-2">{t('orderInfoTitle')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1373,7 +1828,6 @@ export const OrdersManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Customer Info */}
             <div>
               <h3 className="font-medium text-gray-900 mb-2">{t('customerInfoTitle')}</h3>
               <div className="space-y-1 text-sm text-gray-700">
@@ -1394,40 +1848,40 @@ export const OrdersManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Items */}
+            {/* FIX #3: ahora items se muestran bien */}
             <div>
               <h3 className="font-medium text-gray-900 mb-3">{t('productsSectionTitle')}</h3>
               <div className="space-y-3">
                 {selectedOrder.items.map((item, index) => (
                   <div key={index} className="flex justify-between items-start p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1">
-                      <h4 className="font-medium text-gray-900">{item.product.name}</h4>
-                      <p className="text-sm text-gray-600">{item.variation.name}</p>
+                      <h4 className="font-medium text-gray-900">{item.product?.name || 'Producto'}</h4>
+                      <p className="text-sm text-gray-600">{item.variation?.name || 'Variación'}</p>
+
                       {item.selected_ingredients && item.selected_ingredients.length > 0 && (
                         <p className="text-sm text-blue-600 mt-1">
                           + {item.selected_ingredients.map((ing: any) => (typeof ing === 'object' ? ing.name : ing)).join(', ')}
                         </p>
                       )}
+
                       {item.special_notes && (
                         <p className="text-sm text-blue-600 mt-1">
                           <em>{t('noteLabel')}: {item.special_notes}</em>
                         </p>
                       )}
                     </div>
+
                     <div className="text-right ml-4">
                       <p className="font-medium">
-                        {item.quantity} x {formatCurrency(item.variation.price, currency)}
+                        {item.quantity} x {formatCurrency(item.unit_price || item.variation?.price || 0, currency)}
                       </p>
-                      <p className="text-sm text-gray-600">
-                        {formatCurrency(item.variation.price * item.quantity, currency)}
-                      </p>
+                      <p className="text-sm text-gray-600">{formatCurrency(item.total_price || 0, currency)}</p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Totals */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <div className="space-y-2">
                 <div className="flex justify-between">
@@ -1447,7 +1901,6 @@ export const OrdersManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Special instructions */}
             {selectedOrder.special_instructions && (
               <div className="bg-yellow-50 p-4 rounded-lg">
                 <h3 className="font-medium text-gray-900 mb-2">{t('specialInstructionsTitle')}</h3>
@@ -1455,13 +1908,12 @@ export const OrdersManagement: React.FC = () => {
               </div>
             )}
 
-            {/* Actions */}
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
               <Button
                 variant="outline"
                 onClick={() => {
                   setShowModal(false);
-                  printTicket(selectedOrder);
+                  printTicket(selectedOrder); // ✅ mantiene diseño
                 }}
                 icon={Printer}
               >
@@ -1483,7 +1935,7 @@ export const OrdersManagement: React.FC = () => {
         )}
       </Modal>
 
-      {/* Create Order Modal */}
+      {/* Create Modal */}
       <Modal
         isOpen={showCreateOrderModal}
         onClose={() => {
@@ -1500,33 +1952,25 @@ export const OrdersManagement: React.FC = () => {
               <Input
                 label={t('nameRequiredLabel')}
                 value={orderForm.customer.name}
-                onChange={(e) =>
-                  setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, name: e.target.value } }))
-                }
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, name: e.target.value } }))}
                 placeholder={t('customerNamePlaceholder')}
               />
               <Input
                 label={t('phoneRequiredLabel')}
                 value={orderForm.customer.phone}
-                onChange={(e) =>
-                  setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, phone: e.target.value } }))
-                }
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, phone: e.target.value } }))}
                 placeholder={t('customerPhonePlaceholder')}
               />
               <Input
                 label={t('email')}
                 value={orderForm.customer.email}
-                onChange={(e) =>
-                  setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, email: e.target.value } }))
-                }
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, email: e.target.value } }))}
                 placeholder={t('customerEmailPlaceholder')}
               />
               <Input
                 label={t('address')}
                 value={orderForm.customer.address}
-                onChange={(e) =>
-                  setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, address: e.target.value } }))
-                }
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, address: e.target.value } }))}
                 placeholder={t('customerAddressPlaceholder')}
               />
             </div>
@@ -1584,12 +2028,7 @@ export const OrdersManagement: React.FC = () => {
               <Input
                 label={t('deliveryReferencesLabel')}
                 value={orderForm.customer.delivery_instructions}
-                onChange={(e) =>
-                  setOrderForm((prev) => ({
-                    ...prev,
-                    customer: { ...prev.customer, delivery_instructions: e.target.value }
-                  }))
-                }
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, delivery_instructions: e.target.value } }))}
                 placeholder={t('deliveryReferencesPlaceholder')}
               />
             </div>
@@ -1675,7 +2114,7 @@ export const OrdersManagement: React.FC = () => {
         )}
       </Modal>
 
-      {/* Edit Order Modal */}
+      {/* Edit Modal */}
       <Modal
         isOpen={showEditOrderModal}
         onClose={() => {
@@ -1696,33 +2135,25 @@ export const OrdersManagement: React.FC = () => {
                 <Input
                   label={t('nameRequiredLabel')}
                   value={orderForm.customer.name}
-                  onChange={(e) =>
-                    setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, name: e.target.value } }))
-                  }
+                  onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, name: e.target.value } }))}
                   placeholder={t('customerNamePlaceholder')}
                 />
                 <Input
                   label={t('phoneRequiredLabel')}
                   value={orderForm.customer.phone}
-                  onChange={(e) =>
-                    setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, phone: e.target.value } }))
-                  }
+                  onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, phone: e.target.value } }))}
                   placeholder={t('customerPhonePlaceholder')}
                 />
                 <Input
                   label={t('email')}
                   value={orderForm.customer.email}
-                  onChange={(e) =>
-                    setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, email: e.target.value } }))
-                  }
+                  onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, email: e.target.value } }))}
                   placeholder={t('customerEmailPlaceholder')}
                 />
                 <Input
                   label={t('address')}
                   value={orderForm.customer.address}
-                  onChange={(e) =>
-                    setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, address: e.target.value } }))
-                  }
+                  onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, address: e.target.value } }))}
                   placeholder={t('customerAddressPlaceholder')}
                 />
               </div>
@@ -1780,12 +2211,7 @@ export const OrdersManagement: React.FC = () => {
                 <Input
                   label={t('deliveryReferencesLabel')}
                   value={orderForm.customer.delivery_instructions}
-                  onChange={(e) =>
-                    setOrderForm((prev) => ({
-                      ...prev,
-                      customer: { ...prev.customer, delivery_instructions: e.target.value }
-                    }))
-                  }
+                  onChange={(e) => setOrderForm((prev) => ({ ...prev, customer: { ...prev.customer, delivery_instructions: e.target.value } }))}
                   placeholder={t('deliveryReferencesPlaceholder')}
                 />
               </div>
@@ -1800,6 +2226,7 @@ export const OrdersManagement: React.FC = () => {
               />
             )}
 
+            {/* FIX #4: ahora OrderProductSelector recibe items con product completo */}
             <OrderProductSelector
               products={products}
               orderItems={orderItems}
