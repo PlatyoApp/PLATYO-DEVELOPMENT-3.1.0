@@ -43,7 +43,7 @@ type ProductListItem = Pick<
   | 'price'
   | 'updated_at'
 > & {
-  // OJO: para el listado optimizado lo tratamos como “1 categoría” (tu UI lo asume)
+  // Para UI (en ALL lo resolvemos desde product_categories)
   category_id: string;
 };
 
@@ -55,7 +55,7 @@ export const MenuManagement: React.FC = () => {
   // ====== Config ======
   const PAGE_SIZE = 12;
   const CACHE_TTL_MS = 60_000; // 60s
-  const cacheKey = (restaurantId: string) => `menu_cache_v1:${restaurantId}`;
+  const cacheKey = (restaurantId: string) => `menu_cache_v2:${restaurantId}`;
 
   // ====== State ======
   const [categories, setCategories] = useState<Category[]>([]);
@@ -125,6 +125,30 @@ export const MenuManagement: React.FC = () => {
     setCurrentSubscription(data);
   };
 
+  // ====== Cache helpers ======
+  const saveCache = (payload: {
+    categories: Category[];
+    products: ProductListItem[];
+    totalProducts: number;
+  }) => {
+    if (!restaurant?.id) return;
+    sessionStorage.setItem(
+      cacheKey(restaurant.id),
+      JSON.stringify({
+        ts: Date.now(),
+        page,
+        selectedCategory,
+        search: debouncedSearchTerm,
+        ...payload
+      })
+    );
+  };
+
+  const invalidateCache = () => {
+    if (!restaurant?.id) return;
+    sessionStorage.removeItem(cacheKey(restaurant.id));
+  };
+
   // ====== Menú (server-side search + category + pagination) con cache ======
   useEffect(() => {
     if (!restaurant?.id) return;
@@ -154,40 +178,16 @@ export const MenuManagement: React.FC = () => {
       return false;
     };
 
-    // Si hay cache fresco para este “estado” (page+filtros), no pegamos a la DB
     if (tryLoadFromCache()) return;
 
     loadMenuData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.id, page, selectedCategory, debouncedSearchTerm]);
 
-  const saveCache = (payload: {
-    categories: Category[];
-    products: ProductListItem[];
-    totalProducts: number;
-  }) => {
-    if (!restaurant?.id) return;
-    sessionStorage.setItem(
-      cacheKey(restaurant.id),
-      JSON.stringify({
-        ts: Date.now(),
-        page,
-        selectedCategory,
-        search: debouncedSearchTerm,
-        ...payload
-      })
-    );
-  };
-
-  const invalidateCache = () => {
-    if (!restaurant?.id) return;
-    sessionStorage.removeItem(cacheKey(restaurant.id));
-  };
-
   const loadMenuData = async () => {
     if (!restaurant?.id) return;
 
-    // 1) categorías (normalmente pocas)
+    // 1) categorías
     const { data: categoriesData, error: categoriesError } = await supabase
       .from('categories')
       .select('*')
@@ -209,7 +209,7 @@ export const MenuManagement: React.FC = () => {
     if (selectedCategory !== 'all') {
       const { data: pcData, error: pcError } = await supabase
         .from('product_categories')
-        .select('product_id', { count: 'exact' })
+        .select('product_id')
         .eq('category_id', selectedCategory);
 
       if (pcError) {
@@ -229,30 +229,47 @@ export const MenuManagement: React.FC = () => {
       }
     }
 
-    // 3) Query base (listado ligero, sin variations/ingredients)
+    // 3) Query base ligera
+    //    En ALL incluimos product_categories(category_id) para mostrar la categoría correcta
     let query = supabase
       .from('products')
       .select(
-        `
-        id,
-        restaurant_id,
-        name,
-        description,
-        images,
-        status,
-        sku,
-        is_available,
-        is_featured,
-        display_order,
-        price,
-        updated_at
-        `,
+        selectedCategory === 'all'
+          ? `
+            id,
+            restaurant_id,
+            name,
+            description,
+            images,
+            status,
+            sku,
+            is_available,
+            is_featured,
+            display_order,
+            price,
+            updated_at,
+            product_categories ( category_id )
+          `
+          : `
+            id,
+            restaurant_id,
+            name,
+            description,
+            images,
+            status,
+            sku,
+            is_available,
+            is_featured,
+            display_order,
+            price,
+            updated_at
+          `,
         { count: 'exact' }
       )
       .eq('restaurant_id', restaurant.id)
       .order('display_order', { ascending: true });
 
-    // 4) búsqueda global server-side
+    // 4) búsqueda server-side
     if (debouncedSearchTerm) {
       const s = debouncedSearchTerm.replace(/%/g, '\\%').replace(/_/g, '\\_');
       query = query.or(`name.ilike.%${s}%,description.ilike.%${s}%,sku.ilike.%${s}%`);
@@ -276,11 +293,13 @@ export const MenuManagement: React.FC = () => {
     const total = count ?? 0;
     setTotalProducts(total);
 
-    // 7) category_id para UI
+    // 7) category_id
     const productsWithCategory: ProductListItem[] = (productsData ?? []).map((p: any) => ({
       ...p,
-      // si estás filtrando por categoría, sabemos cuál es
-      category_id: selectedCategory === 'all' ? '' : selectedCategory
+      category_id:
+        selectedCategory === 'all'
+          ? (p.product_categories?.[0]?.category_id || '')
+          : selectedCategory
     }));
 
     setProducts(productsWithCategory);
@@ -324,7 +343,6 @@ export const MenuManagement: React.FC = () => {
 
       if (error) throw error;
 
-      // Como el filtro es server-side, lo más consistente es recargar
       invalidateCache();
       await loadMenuData();
 
@@ -358,7 +376,6 @@ export const MenuManagement: React.FC = () => {
       };
 
       if (editingProductId) {
-        // Update
         const { error: updateError } = await supabase
           .from('products')
           .update({
@@ -385,7 +402,6 @@ export const MenuManagement: React.FC = () => {
           if (insertCategoryError) throw insertCategoryError;
         }
       } else {
-        // Insert new
         const maxDisplayOrder = Math.max(...products.map((p) => (p as any).display_order || 0), -1);
 
         const { data: newProduct, error: insertError } = await supabase
@@ -482,7 +498,6 @@ export const MenuManagement: React.FC = () => {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
 
-      // Limpieza featured IDs (igual que tenías)
       if (restaurant?.settings?.promo?.featured_product_ids?.includes(productId)) {
         const updatedFeaturedIds = restaurant.settings.promo.featured_product_ids.filter(
           (id: string) => id !== productId
@@ -522,7 +537,7 @@ export const MenuManagement: React.FC = () => {
     });
   };
 
-  // ====== Duplicate (fetch full) ======
+  // ====== Duplicate ======
   const handleDuplicateProduct = async (productId: string) => {
     if (!restaurant) return;
 
