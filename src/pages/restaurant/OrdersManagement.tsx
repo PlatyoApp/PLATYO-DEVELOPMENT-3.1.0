@@ -528,15 +528,20 @@ export const OrdersManagement: React.FC = () => {
   };
 
 
-  const handleEditOrderById = async (orderId: string) => {
-    setShowEditOrderModal(true);
-    setEditingOrder(null);
-    setLoadingOrderDetail(true);
+const handleEditOrderById = async (orderId: string) => {
+  setShowEditOrderModal(true);
+  setEditingOrder(null);
+  setLoadingOrderDetail(true);
 
-    await ensureCatalogLoaded();
-    const full = await fetchOrderById(orderId);
+  try {
+    // Corre en paralelo: catálogo (si hace falta) + pedido
+    const catalogPromise =
+      products.length > 0 ? Promise.resolve() : ensureCatalogLoaded();
 
-    setLoadingOrderDetail(false);
+    const [_, full] = await Promise.all([
+      catalogPromise,
+      fetchOrderById(orderId) // trae items y datos del pedido
+    ]);
 
     if (!full) {
       setShowEditOrderModal(false);
@@ -553,7 +558,11 @@ export const OrdersManagement: React.FC = () => {
       special_instructions: full.special_instructions || ''
     });
     setOrderItems(full.items || []);
-  };
+  } finally {
+    setLoadingOrderDetail(false);
+  }
+};
+
 
   // =============================
   // 5) Badges / Status
