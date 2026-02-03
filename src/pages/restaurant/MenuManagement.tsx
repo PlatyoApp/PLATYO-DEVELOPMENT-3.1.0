@@ -1,5 +1,5 @@
 // src/pages/restaurant/MenuManagement.tsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Plus,
   Pencil as Edit,
@@ -43,6 +43,7 @@ type ProductListItem = Pick<
   | 'price'
   | 'updated_at'
 > & {
+  // Para UI (en ALL lo resolvemos desde product_categories)
   category_id: string;
 };
 
@@ -53,8 +54,8 @@ export const MenuManagement: React.FC = () => {
 
   // ====== Config ======
   const PAGE_SIZE = 12;
-  const CACHE_TTL_MS = 60_000;
-  const cacheKey = (restaurantId: string) => `menu_cache_v3:${restaurantId}`;
+  const CACHE_TTL_MS = 60_000; // 60s
+  const cacheKey = (restaurantId: string) => `menu_cache_v2:${restaurantId}`;
 
   // ====== State ======
   const [categories, setCategories] = useState<Category[]>([]);
@@ -88,13 +89,10 @@ export const MenuManagement: React.FC = () => {
   const currency = restaurant?.settings?.currency || 'USD';
   const totalPages = Math.max(1, Math.ceil(totalProducts / PAGE_SIZE));
 
-  // drag paging cooldown
-  const dragPagingCooldownRef = useRef<number>(0);
-
   // ====== Debounce búsqueda ======
   useEffect(() => {
-    const id = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
-    return () => window.clearTimeout(id);
+    const id = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => clearTimeout(id);
   }, [searchTerm]);
 
   // Reset a página 1 cuando cambien filtros/búsqueda (server-side)
@@ -128,7 +126,11 @@ export const MenuManagement: React.FC = () => {
   };
 
   // ====== Cache helpers ======
-  const saveCache = (payload: { categories: Category[]; products: ProductListItem[]; totalProducts: number }) => {
+  const saveCache = (payload: {
+    categories: Category[];
+    products: ProductListItem[];
+    totalProducts: number;
+  }) => {
     if (!restaurant?.id) return;
     sessionStorage.setItem(
       cacheKey(restaurant.id),
@@ -228,6 +230,7 @@ export const MenuManagement: React.FC = () => {
     }
 
     // 3) Query base ligera
+    //    En ALL incluimos product_categories(category_id) para mostrar la categoría correcta
     let query = supabase
       .from('products')
       .select(
@@ -290,6 +293,7 @@ export const MenuManagement: React.FC = () => {
     const total = count ?? 0;
     setTotalProducts(total);
 
+    // 7) category_id
     const productsWithCategory: ProductListItem[] = (productsData ?? []).map((p: any) => ({
       ...p,
       category_id:
@@ -329,150 +333,7 @@ export const MenuManagement: React.FC = () => {
     return category ? category.name : t('unknownCategory');
   };
 
-  // ====== Reorder global (solo en ALL y sin búsqueda) ======
-  const canReorder = selectedCategory === 'all' && debouncedSearchTerm === '';
-
-  const persistDisplayOrders = async (updates: { id: string; display_order: number }[]) => {
-    for (const u of updates) {
-      const { error } = await supabase
-        .from('products')
-        .update({ display_order: u.display_order, updated_at: new Date().toISOString() })
-        .eq('id', u.id);
-      if (error) throw error;
-    }
-  };
-
-  const reorderGlobalByInsert = async (draggedId: string, targetId: string, place: 'before' | 'after') => {
-    // Necesitamos el orden global real. Lo más consistente es: pedirlo al servidor (solo ids+display_order).
-    // Esto evita errores por paginación.
-    if (!restaurant?.id) return;
-
-    const { data: allData, error } = await supabase
-      .from('products')
-      .select('id, display_order')
-      .eq('restaurant_id', restaurant.id)
-      .order('display_order', { ascending: true });
-
-    if (error) throw error;
-
-    const sorted = (allData || []).map((x: any) => ({ id: x.id, display_order: x.display_order || 0 }));
-
-    const fromIndex = sorted.findIndex((x) => x.id === draggedId);
-    const toIndex = sorted.findIndex((x) => x.id === targetId);
-    if (fromIndex === -1 || toIndex === -1) return;
-
-    const working = [...sorted];
-    const [dragged] = working.splice(fromIndex, 1);
-
-    const insertIndex =
-      place === 'before'
-        ? (toIndex > fromIndex ? toIndex - 1 : toIndex)
-        : (toIndex > fromIndex ? toIndex : toIndex + 1);
-
-    working.splice(insertIndex, 0, dragged);
-
-    const start = Math.min(fromIndex, insertIndex);
-    const end = Math.max(fromIndex, insertIndex);
-
-    const affected = working.slice(start, end + 1);
-    const originalOrders = sorted
-      .slice(start, end + 1)
-      .map((x) => x.display_order)
-      .sort((a, b) => a - b);
-
-    const updates = affected.map((x, i) => ({ id: x.id, display_order: originalOrders[i] }));
-
-    // Optimistic: refrescamos la página actual luego de persistir para coherencia
-    await persistDisplayOrders(updates);
-
-    invalidateCache();
-    await loadMenuData();
-  };
-
-  const moveDraggedToPageEdge = async (edge: 'start' | 'end') => {
-    if (!draggedProduct) return;
-    if (products.length === 0) return;
-
-    const target = edge === 'start' ? products[0] : products[products.length - 1];
-    await reorderGlobalByInsert(draggedProduct.id, target.id, edge === 'start' ? 'before' : 'after');
-  };
-
-  const maybeTurnPageWhileDragging = (direction: 'prev' | 'next') => {
-    if (!draggedProduct) return;
-    const now = Date.now();
-    if (now - dragPagingCooldownRef.current < 450) return;
-    dragPagingCooldownRef.current = now;
-
-    setPage((p) => {
-      if (direction === 'prev') return Math.max(1, p - 1);
-      return Math.min(totalPages, p + 1);
-    });
-  };
-
-  // ====== Drag handlers ======
-  const handleDragStart = (e: React.DragEvent, product: ProductListItem) => {
-    if (!canReorder) return;
-    setDraggedProduct(product);
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!canReorder) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDropOnItem = async (e: React.DragEvent, targetProduct: ProductListItem) => {
-    e.preventDefault();
-
-    if (!canReorder) return;
-
-    if (!draggedProduct || draggedProduct.id === targetProduct.id) {
-      setDraggedProduct(null);
-      return;
-    }
-
-    try {
-      await reorderGlobalByInsert(draggedProduct.id, targetProduct.id, 'before');
-    } catch (err) {
-      console.error(err);
-      showToast('error', 'Error', 'No se pudo reordenar el producto');
-    } finally {
-      setDraggedProduct(null);
-    }
-  };
-
-  const handleDropOnPageStart = async (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!canReorder) return;
-
-    try {
-      await moveDraggedToPageEdge('start');
-    } catch (err) {
-      console.error(err);
-      showToast('error', 'Error', 'No se pudo reordenar el producto');
-    } finally {
-      setDraggedProduct(null);
-    }
-  };
-
-  const handleDropOnPageEnd = async (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!canReorder) return;
-
-    try {
-      await moveDraggedToPageEdge('end');
-    } catch (err) {
-      console.error(err);
-      showToast('error', 'Error', 'No se pudo reordenar el producto');
-    } finally {
-      setDraggedProduct(null);
-    }
-  };
-
-  const handleDragEnd = () => setDraggedProduct(null);
-
-  // ====== Status / CRUD (igual) ======
+  // ====== Status ======
   const handleChangeProductStatus = async (productId: string, newStatus: Product['status']) => {
     try {
       const { error } = await supabase
@@ -485,13 +346,19 @@ export const MenuManagement: React.FC = () => {
       invalidateCache();
       await loadMenuData();
 
-      showToast('success', t('statusUpdated'), `${t('productStatusChangedTo')} ${t(newStatus)}`, 3000);
+      showToast(
+        'success',
+        t('statusUpdated'),
+        `${t('productStatusChangedTo')} ${t(newStatus)}`,
+        3000
+      );
     } catch (error: any) {
       console.error('Error changing product status:', error);
       showToast('error', 'Error', 'No se pudo cambiar el estado del producto');
     }
   };
 
+  // ====== Save (create/edit) ======
   const handleSaveProduct = async (productData: any) => {
     if (!restaurant) return;
 
@@ -577,6 +444,7 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
+  // ====== Lazy edit fetch ======
   useEffect(() => {
     const fetchEditingProduct = async () => {
       if (!showProductModal) return;
@@ -624,10 +492,30 @@ export const MenuManagement: React.FC = () => {
     setShowProductModal(true);
   };
 
+  // ====== Delete ======
   const handleDeleteProduct = async (productId: string) => {
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
+
+      if (restaurant?.settings?.promo?.featured_product_ids?.includes(productId)) {
+        const updatedFeaturedIds = restaurant.settings.promo.featured_product_ids.filter(
+          (id: string) => id !== productId
+        );
+
+        await supabase
+          .from('restaurants')
+          .update({
+            settings: {
+              ...restaurant.settings,
+              promo: {
+                ...restaurant.settings.promo,
+                featured_product_ids: updatedFeaturedIds
+              }
+            }
+          })
+          .eq('id', restaurant.id);
+      }
 
       setDeleteConfirm({ show: false, productId: '', productName: '' });
 
@@ -642,15 +530,137 @@ export const MenuManagement: React.FC = () => {
   };
 
   const openDeleteConfirm = (product: ProductListItem) => {
-    setDeleteConfirm({ show: true, productId: product.id, productName: product.name });
+    setDeleteConfirm({
+      show: true,
+      productId: product.id,
+      productName: product.name
+    });
   };
 
-  // ===== UI =====
+  // ====== Duplicate ======
+  const handleDuplicateProduct = async (productId: string) => {
+    if (!restaurant) return;
+
+    try {
+      const { data: productToDuplicate, error: fetchError } = await supabase
+        .from('products')
+        .select(
+          `
+          *,
+          product_categories ( category_id )
+        `
+        )
+        .eq('id', productId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!productToDuplicate) return;
+
+      const category_id = productToDuplicate.product_categories?.[0]?.category_id || '';
+      const maxDisplayOrder = Math.max(...products.map((p) => (p as any).display_order || 0), -1);
+
+      const { data: newProduct, error: insertError } = await supabase
+        .from('products')
+        .insert({
+          restaurant_id: restaurant.id,
+          name: `${productToDuplicate.name} (${t('copyLabel')})`,
+          description: productToDuplicate.description,
+          images: productToDuplicate.images,
+          variations: productToDuplicate.variations,
+          ingredients: productToDuplicate.ingredients,
+          dietary_restrictions: productToDuplicate.dietary_restrictions,
+          spice_level: productToDuplicate.spice_level,
+          preparation_time: productToDuplicate.preparation_time,
+          status: productToDuplicate.status,
+          sku: productToDuplicate.sku ? `${productToDuplicate.sku}-COPY` : '',
+          is_available: productToDuplicate.is_available,
+          is_featured: false,
+          display_order: maxDisplayOrder + 1,
+          price:
+            productToDuplicate.variations && productToDuplicate.variations.length > 0
+              ? Math.min(...productToDuplicate.variations.map((v: any) => v.price))
+              : productToDuplicate.price || 0
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      if (category_id && newProduct) {
+        const { error: categoryError } = await supabase.from('product_categories').insert({
+          product_id: newProduct.id,
+          category_id
+        });
+        if (categoryError) console.error('Error adding category:', categoryError);
+      }
+
+      invalidateCache();
+      await loadMenuData();
+
+      showToast(
+        'success',
+        t('productDuplicatedTitle'),
+        t('productDuplicatedMessage', { name: productToDuplicate.name }),
+        4000
+      );
+    } catch (error: any) {
+      console.error('Error duplicating product:', error);
+      showToast('error', 'Error', error.message || 'No se pudo duplicar el producto');
+    }
+  };
+
+  // ====== Archive ======
+  const handleArchiveProduct = async (productId: string) => {
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({ status: 'archived', updated_at: new Date().toISOString() })
+        .eq('id', productId);
+
+      if (error) throw error;
+
+      invalidateCache();
+      await loadMenuData();
+
+      showToast('info', t('productArchivedTitle'), t('productArchivedMessage'), 4000);
+    } catch (error: any) {
+      console.error('Error archiving product:', error);
+      showToast('error', 'Error', 'No se pudo archivar el producto');
+    }
+  };
+
+  // ====== Drag handlers (sin ordenamiento global aquí) ======
+  const handleDragStart = (e: React.DragEvent, product: ProductListItem) => {
+    setDraggedProduct(product);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, _targetProduct: ProductListItem) => {
+    e.preventDefault();
+    setDraggedProduct(null);
+    showToast('info', 'Info', 'El orden global se gestiona en el menú público (lista completa).', 2500);
+  };
+
+  const handleDragEnd = () => setDraggedProduct(null);
+
+  const moveProductUp = async (_productId: string) => {
+    showToast('info', 'Info', 'El orden global se gestiona en el menú público.', 2500);
+  };
+
+  const moveProductDown = async (_productId: string) => {
+    showToast('info', 'Info', 'El orden global se gestiona en el menú público.', 2500);
+  };
+
   return (
     <div className="p-6">
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{t('productManagement')}</h1>
-
         <div className="flex gap-3">
           <a
             href={restaurant?.slug ? `/${restaurant.slug}` : '#'}
@@ -678,6 +688,63 @@ export const MenuManagement: React.FC = () => {
           >
             {t('newProduct')}
           </Button>
+        </div>
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+              <Package className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">{t('totalProducts')}</p>
+              <p className="text-2xl font-bold text-gray-900">{totalProducts}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4 border border-green-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
+              <CheckCircle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">{t('active')}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {products.filter((p) => p.status === 'active').length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-lg p-4 border border-orange-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-md">
+              <AlertCircle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">{t('outOfStock')}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {products.filter((p) => p.status === 'out_of_stock').length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg p-4 border border-gray-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-gray-400 to-gray-600 rounded-xl flex items-center justify-center shadow-md">
+              <Archive className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">{t('archived')}</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {products.filter((p) => p.status === 'archived').length}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -722,18 +789,12 @@ export const MenuManagement: React.FC = () => {
           ))}
         </div>
 
-        {canReorder && (
+        {searchTerm === '' && products.length > 1 && (
           <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 rounded-lg p-3 border border-blue-100">
             <GripVertical className="w-4 h-4 text-blue-600 flex-shrink-0" />
             <p>
-              <strong className="text-blue-700">{t('tipLabel')}:</strong> Arrastra un producto, pasa por “Anterior/Siguiente” para cambiar de página, y suelta sobre otro producto (o en la franja superior/inferior).
+              <strong className="text-blue-700">{t('tipLabel')}:</strong> {t('dragToReorder')}
             </p>
-          </div>
-        )}
-
-        {!canReorder && (
-          <div className="text-xs text-gray-500">
-            Para reordenar con drag-and-drop, selecciona <strong>ALL</strong> y limpia la búsqueda.
           </div>
         )}
       </div>
@@ -749,37 +810,49 @@ export const MenuManagement: React.FC = () => {
           <h3 className="text-lg font-medium text-gray-900 mb-2">
             {searchTerm ? t('noProductsFound') : t('noProductsInCategory')}
           </h3>
+          <p className="text-gray-600 mb-4">
+            {searchTerm ? t('tryDifferentSearch') : t('createFirstProduct')}
+          </p>
+
+          {!searchTerm && (
+            <Button
+              icon={Plus}
+              onClick={() => {
+                setEditingProductId(null);
+                setEditingProduct(null);
+                setShowProductModal(true);
+              }}
+            >
+              {t('create')} {t('newProduct')}
+            </Button>
+          )}
+
+          {searchTerm && (
+            <Button variant="outline" onClick={() => setSearchTerm('')}>
+              {t('clearSearch')}
+            </Button>
+          )}
         </div>
       ) : (
         <>
-          {/* Drop zone: inicio de página */}
-          {canReorder && draggedProduct && (
-            <div
-              onDragOver={handleDragOver}
-              onDrop={handleDropOnPageStart}
-              className="mb-3 rounded-lg border border-dashed border-blue-300 bg-blue-50 text-blue-700 text-sm px-4 py-2"
-            >
-              Suelta aquí para mover al inicio de esta página
-            </div>
-          )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {products.map((product) => (
               <div
                 key={product.id}
-                draggable={canReorder}
+                draggable={searchTerm === ''}
                 onDragStart={(e) => handleDragStart(e, product)}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDropOnItem(e, product)}
+                onDrop={(e) => handleDrop(e, product)}
                 onDragEnd={handleDragEnd}
                 className={`bg-white rounded-xl shadow-sm border-2 transition-all overflow-hidden group ${
-                  canReorder ? 'cursor-move' : ''
+                  searchTerm === '' ? 'cursor-move' : ''
                 } ${
                   draggedProduct?.id === product.id
                     ? 'opacity-50 scale-95 border-blue-400'
                     : 'border-gray-200 hover:shadow-lg hover:border-blue-300'
                 }`}
               >
+                {/* Image */}
                 <div className="aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-200 relative overflow-hidden">
                   {product.images?.length > 0 ? (
                     <img
@@ -795,8 +868,15 @@ export const MenuManagement: React.FC = () => {
                   )}
 
                   <div className="absolute top-2 right-2">{getStatusBadge(product.status)}</div>
+
+                  {product.images?.length > 1 && (
+                    <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded-lg">
+                      +{product.images.length - 1}
+                    </div>
+                  )}
                 </div>
 
+                {/* Info */}
                 <div className="p-4">
                   <div className="mb-2">
                     <h3 className="text-lg font-semibold text-gray-900 truncate">{product.name}</h3>
@@ -805,6 +885,7 @@ export const MenuManagement: React.FC = () => {
 
                   <p className="text-gray-700 text-sm mb-3 line-clamp-2">{product.description}</p>
 
+                  {/* Price precomputed */}
                   <div className="mb-4">
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-bold text-gray-900">
@@ -813,28 +894,65 @@ export const MenuManagement: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Actions */}
                   <div className="space-y-2">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" icon={Edit} onClick={() => handleEditProduct(product)} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={ArrowUp}
+                        onClick={() => moveProductUp(product.id)}
+                        className="text-blue-600 hover:text-blue-700"
+                        title={t('moveUp')}
+                        disabled={products[0]?.id === product.id}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={ArrowDown}
+                        onClick={() => moveProductDown(product.id)}
+                        className="text-blue-600 hover:text-blue-700"
+                        title={t('moveDown')}
+                        disabled={products[products.length - 1]?.id === product.id}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Edit}
+                        onClick={() => handleEditProduct(product)}
+                        title={t('editProduct')}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Copy}
+                        onClick={() => handleDuplicateProduct(product.id)}
+                        className="text-purple-600 hover:text-purple-700"
+                        title={t('duplicateProduct')}
+                      />
                       <Button
                         variant="ghost"
                         size="sm"
                         icon={Trash2}
                         onClick={() => openDeleteConfirm(product)}
                         className="text-red-600 hover:text-red-700"
+                        title={t('deleteProduct')}
                       />
                     </div>
 
                     <div className="flex items-center gap-2">
                       <select
                         value={product.status}
-                        onChange={(e) => handleChangeProductStatus(product.id, e.target.value as Product['status'])}
+                        onChange={(e) =>
+                          handleChangeProductStatus(product.id, e.target.value as Product['status'])
+                        }
                         className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                       >
                         <option value="active">{t('active')}</option>
                         <option value="out_of_stock">{t('outOfStock')}</option>
                         <option value="archived">{t('archived')}</option>
                       </select>
+
                       {product.sku && <span className="text-xs text-gray-500">{product.sku}</span>}
                     </div>
                   </div>
@@ -843,22 +961,12 @@ export const MenuManagement: React.FC = () => {
             ))}
           </div>
 
-          {/* Drop zone: final de página */}
-          {canReorder && draggedProduct && (
-            <div
-              onDragOver={handleDragOver}
-              onDrop={handleDropOnPageEnd}
-              className="mt-3 rounded-lg border border-dashed border-blue-300 bg-blue-50 text-blue-700 text-sm px-4 py-2"
-            >
-              Suelta aquí para mover al final de esta página
-            </div>
-          )}
-
           {/* Pagination */}
           {totalProducts > PAGE_SIZE && (
             <div className="flex items-center justify-between mt-6 bg-white p-3 rounded-lg shadow border">
               <div className="text-sm text-gray-600">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong> · {totalProducts} productos
+                Página <strong>{page}</strong> de <strong>{totalPages}</strong> · {totalProducts}{' '}
+                productos
               </div>
 
               <div className="flex gap-2">
@@ -867,7 +975,6 @@ export const MenuManagement: React.FC = () => {
                   size="sm"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  onDragEnter={() => canReorder && maybeTurnPageWhileDragging('prev')}
                 >
                   Anterior
                 </Button>
@@ -876,7 +983,6 @@ export const MenuManagement: React.FC = () => {
                   size="sm"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  onDragEnter={() => canReorder && maybeTurnPageWhileDragging('next')}
                 >
                   Siguiente
                 </Button>
@@ -913,6 +1019,7 @@ export const MenuManagement: React.FC = () => {
         )}
       </Modal>
 
+      {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         isOpen={deleteConfirm.show}
         onClose={() => setDeleteConfirm({ show: false, productId: '', productName: '' })}
