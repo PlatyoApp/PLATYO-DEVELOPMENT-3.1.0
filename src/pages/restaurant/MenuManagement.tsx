@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/restaurant/MenuManagement.tsx
+import React, { useEffect, useState } from 'react';
 import {
   Plus,
   Pencil as Edit,
@@ -42,6 +43,7 @@ type ProductListItem = Pick<
   | 'price'
   | 'updated_at'
 > & {
+  // OJO: para el listado optimizado lo tratamos como “1 categoría” (tu UI lo asume)
   category_id: string;
 };
 
@@ -50,17 +52,18 @@ export const MenuManagement: React.FC = () => {
   const { showToast } = useToast();
   const { t } = useLanguage();
 
-  // Paginación: 12 productos por página
+  // ====== Config ======
   const PAGE_SIZE = 12;
+  const CACHE_TTL_MS = 60_000; // 60s
+  const cacheKey = (restaurantId: string) => `menu_cache_v1:${restaurantId}`;
 
+  // ====== State ======
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Debounced search term (server-side)
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   const [showProductModal, setShowProductModal] = useState(false);
@@ -74,11 +77,7 @@ export const MenuManagement: React.FC = () => {
     show: boolean;
     productId: string;
     productName: string;
-  }>({
-    show: false,
-    productId: '',
-    productName: ''
-  });
+  }>({ show: false, productId: '', productName: '' });
 
   const [draggedProduct, setDraggedProduct] = useState<ProductListItem | null>(null);
 
@@ -90,7 +89,7 @@ export const MenuManagement: React.FC = () => {
   const currency = restaurant?.settings?.currency || 'USD';
   const totalPages = Math.max(1, Math.ceil(totalProducts / PAGE_SIZE));
 
-  // Debounce de búsqueda
+  // ====== Debounce búsqueda ======
   useEffect(() => {
     const id = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
     return () => clearTimeout(id);
@@ -101,16 +100,12 @@ export const MenuManagement: React.FC = () => {
     setPage(1);
   }, [selectedCategory, debouncedSearchTerm]);
 
+  // ====== Subscription ======
   useEffect(() => {
-    if (!restaurant) return;
+    if (!restaurant?.id) return;
     loadSubscription();
-  }, [restaurant]);
-
-  useEffect(() => {
-    if (!restaurant) return;
-    loadMenuData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurant, page, selectedCategory, debouncedSearchTerm]);
+  }, [restaurant?.id]);
 
   const loadSubscription = async () => {
     if (!restaurant?.id) return;
@@ -130,10 +125,69 @@ export const MenuManagement: React.FC = () => {
     setCurrentSubscription(data);
   };
 
+  // ====== Menú (server-side search + category + pagination) con cache ======
+  useEffect(() => {
+    if (!restaurant?.id) return;
+
+    const tryLoadFromCache = () => {
+      const raw = sessionStorage.getItem(cacheKey(restaurant.id));
+      if (!raw) return false;
+
+      try {
+        const cached = JSON.parse(raw);
+        const isFresh = Date.now() - cached.ts < CACHE_TTL_MS;
+
+        if (
+          isFresh &&
+          cached.page === page &&
+          cached.selectedCategory === selectedCategory &&
+          cached.search === debouncedSearchTerm
+        ) {
+          setCategories(cached.categories ?? []);
+          setProducts(cached.products ?? []);
+          setTotalProducts(cached.totalProducts ?? 0);
+          return true;
+        }
+      } catch {
+        return false;
+      }
+      return false;
+    };
+
+    // Si hay cache fresco para este “estado” (page+filtros), no pegamos a la DB
+    if (tryLoadFromCache()) return;
+
+    loadMenuData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurant?.id, page, selectedCategory, debouncedSearchTerm]);
+
+  const saveCache = (payload: {
+    categories: Category[];
+    products: ProductListItem[];
+    totalProducts: number;
+  }) => {
+    if (!restaurant?.id) return;
+    sessionStorage.setItem(
+      cacheKey(restaurant.id),
+      JSON.stringify({
+        ts: Date.now(),
+        page,
+        selectedCategory,
+        search: debouncedSearchTerm,
+        ...payload
+      })
+    );
+  };
+
+  const invalidateCache = () => {
+    if (!restaurant?.id) return;
+    sessionStorage.removeItem(cacheKey(restaurant.id));
+  };
+
   const loadMenuData = async () => {
     if (!restaurant?.id) return;
 
-    // Categories (normalmente pocas; ok traerlas completas)
+    // 1) categorías (normalmente pocas)
     const { data: categoriesData, error: categoriesError } = await supabase
       .from('categories')
       .select('*')
@@ -141,14 +195,41 @@ export const MenuManagement: React.FC = () => {
       .eq('is_active', true);
 
     if (categoriesError) console.error('Error loading categories:', categoriesError);
-    setCategories(categoriesData || []);
+    const safeCategories = categoriesData || [];
+    setCategories(safeCategories);
 
     setLoadingProducts(true);
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // Base query: listado ligero + conteo exacto
+    // 2) Si hay filtro de categoría, obtenemos IDs desde tabla puente (robusto)
+    let productIdsForCategory: string[] | null = null;
+
+    if (selectedCategory !== 'all') {
+      const { data: pcData, error: pcError } = await supabase
+        .from('product_categories')
+        .select('product_id', { count: 'exact' })
+        .eq('category_id', selectedCategory);
+
+      if (pcError) {
+        console.error('Error loading product_categories:', pcError);
+        setLoadingProducts(false);
+        return;
+      }
+
+      productIdsForCategory = (pcData ?? []).map((r: any) => r.product_id);
+
+      if (productIdsForCategory.length === 0) {
+        setProducts([]);
+        setTotalProducts(0);
+        setLoadingProducts(false);
+        saveCache({ categories: safeCategories, products: [], totalProducts: 0 });
+        return;
+      }
+    }
+
+    // 3) Query base (listado ligero, sin variations/ingredients)
     let query = supabase
       .from('products')
       .select(
@@ -164,28 +245,25 @@ export const MenuManagement: React.FC = () => {
         is_featured,
         display_order,
         price,
-        updated_at,
-        product_categories ( category_id )
-      `,
+        updated_at
+        `,
         { count: 'exact' }
       )
       .eq('restaurant_id', restaurant.id)
       .order('display_order', { ascending: true });
 
-    // Category filter (server-side) por tabla puente
-    if (selectedCategory !== 'all') {
-      query = query.eq('product_categories.category_id', selectedCategory);
-    }
-
-    // Search (server-side) global en name/description/sku
+    // 4) búsqueda global server-side
     if (debouncedSearchTerm) {
-      // escapamos % y _ para evitar comportamientos raros en LIKE
       const s = debouncedSearchTerm.replace(/%/g, '\\%').replace(/_/g, '\\_');
-      query = query.or(
-        `name.ilike.%${s}%,description.ilike.%${s}%,sku.ilike.%${s}%`
-      );
+      query = query.or(`name.ilike.%${s}%,description.ilike.%${s}%,sku.ilike.%${s}%`);
     }
 
+    // 5) filtro categoría por IDs
+    if (productIdsForCategory) {
+      query = query.in('id', productIdsForCategory);
+    }
+
+    // 6) paginación
     const { data: productsData, error: productsError, count } = await query.range(from, to);
 
     setLoadingProducts(false);
@@ -195,16 +273,26 @@ export const MenuManagement: React.FC = () => {
       return;
     }
 
-    setTotalProducts(count ?? 0);
+    const total = count ?? 0;
+    setTotalProducts(total);
 
-    const productsWithCategories: ProductListItem[] = (productsData || []).map((p: any) => ({
+    // 7) category_id para UI
+    const productsWithCategory: ProductListItem[] = (productsData ?? []).map((p: any) => ({
       ...p,
-      category_id: p.product_categories?.[0]?.category_id || ''
+      // si estás filtrando por categoría, sabemos cuál es
+      category_id: selectedCategory === 'all' ? '' : selectedCategory
     }));
 
-    setProducts(productsWithCategories);
+    setProducts(productsWithCategory);
+
+    saveCache({
+      categories: safeCategories,
+      products: productsWithCategory,
+      totalProducts: total
+    });
   };
 
+  // ====== UI helpers ======
   const getStatusBadge = (status: Product['status']) => {
     switch (status) {
       case 'active':
@@ -221,13 +309,12 @@ export const MenuManagement: React.FC = () => {
   };
 
   const getCategoryName = (categoryId: string) => {
+    if (!categoryId) return t('unknownCategory');
     const category = categories.find((cat) => cat.id === categoryId);
     return category ? category.name : t('unknownCategory');
   };
 
-  // ---------------------------
-  // Status changes (sin reload completo)
-  // ---------------------------
+  // ====== Status ======
   const handleChangeProductStatus = async (productId: string, newStatus: Product['status']) => {
     try {
       const { error } = await supabase
@@ -237,7 +324,9 @@ export const MenuManagement: React.FC = () => {
 
       if (error) throw error;
 
-      setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, status: newStatus } : p)));
+      // Como el filtro es server-side, lo más consistente es recargar
+      invalidateCache();
+      await loadMenuData();
 
       showToast(
         'success',
@@ -251,9 +340,7 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
-  // ---------------------------
-  // Save product (create/edit)
-  // ---------------------------
+  // ====== Save (create/edit) ======
   const handleSaveProduct = async (productData: any) => {
     if (!restaurant) return;
 
@@ -297,27 +384,6 @@ export const MenuManagement: React.FC = () => {
 
           if (insertCategoryError) throw insertCategoryError;
         }
-
-        // Update local item (campos ligeros)
-        setProducts((prev) =>
-          prev.map((p) =>
-            p.id === editingProductId
-              ? {
-                  ...p,
-                  name: dataToSave.name,
-                  description: dataToSave.description,
-                  images: dataToSave.images,
-                  sku: dataToSave.sku,
-                  status: dataToSave.status,
-                  is_available: dataToSave.is_available,
-                  is_featured: dataToSave.is_featured,
-                  price: dataToSave.price,
-                  updated_at: new Date().toISOString(),
-                  category_id: category_id || p.category_id
-                }
-              : p
-          )
-        );
       } else {
         // Insert new
         const maxDisplayOrder = Math.max(...products.map((p) => (p as any).display_order || 0), -1);
@@ -329,7 +395,7 @@ export const MenuManagement: React.FC = () => {
             ...dataToSave,
             display_order: maxDisplayOrder + 1
           })
-          .select('id, restaurant_id, name, description, images, status, sku, is_available, is_featured, display_order, price, updated_at')
+          .select('id')
           .single();
 
         if (insertError) throw insertError;
@@ -341,14 +407,14 @@ export const MenuManagement: React.FC = () => {
           });
           if (categoryError) throw categoryError;
         }
-
-        // Para mantener consistencia con filtros/paginación server-side: recargamos la página actual
-        await loadMenuData();
       }
 
       setShowProductModal(false);
       setEditingProductId(null);
       setEditingProduct(null);
+
+      invalidateCache();
+      await loadMenuData();
 
       showToast(
         'success',
@@ -362,14 +428,11 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
-  // ---------------------------
-  // Lazy edit: fetch product detail only when needed
-  // ---------------------------
+  // ====== Lazy edit fetch ======
   useEffect(() => {
     const fetchEditingProduct = async () => {
       if (!showProductModal) return;
 
-      // Nuevo producto: no fetch
       if (!editingProductId) {
         setEditingProduct(null);
         return;
@@ -413,15 +476,13 @@ export const MenuManagement: React.FC = () => {
     setShowProductModal(true);
   };
 
-  // ---------------------------
-  // Delete
-  // ---------------------------
+  // ====== Delete ======
   const handleDeleteProduct = async (productId: string) => {
     try {
       const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw error;
 
-      // Clean up featured product IDs if needed (kept as in your code)
+      // Limpieza featured IDs (igual que tenías)
       if (restaurant?.settings?.promo?.featured_product_ids?.includes(productId)) {
         const updatedFeaturedIds = restaurant.settings.promo.featured_product_ids.filter(
           (id: string) => id !== productId
@@ -441,11 +502,12 @@ export const MenuManagement: React.FC = () => {
           .eq('id', restaurant.id);
       }
 
-      // Recargar para mantener consistencia de conteo + paginación server-side
+      setDeleteConfirm({ show: false, productId: '', productName: '' });
+
+      invalidateCache();
       await loadMenuData();
 
       showToast('info', t('productDeletedTitle'), t('productDeletedMessage'), 4000);
-      setDeleteConfirm({ show: false, productId: '', productName: '' });
     } catch (error: any) {
       console.error('Error deleting product:', error);
       showToast('error', 'Error', 'No se pudo eliminar el producto');
@@ -460,14 +522,11 @@ export const MenuManagement: React.FC = () => {
     });
   };
 
-  // ---------------------------
-  // Duplicate (needs full product: fetch on demand)
-  // ---------------------------
+  // ====== Duplicate (fetch full) ======
   const handleDuplicateProduct = async (productId: string) => {
     if (!restaurant) return;
 
     try {
-      // Fetch full product detail to duplicate accurately
       const { data: productToDuplicate, error: fetchError } = await supabase
         .from('products')
         .select(
@@ -483,7 +542,6 @@ export const MenuManagement: React.FC = () => {
       if (!productToDuplicate) return;
 
       const category_id = productToDuplicate.product_categories?.[0]?.category_id || '';
-
       const maxDisplayOrder = Math.max(...products.map((p) => (p as any).display_order || 0), -1);
 
       const { data: newProduct, error: insertError } = await supabase
@@ -521,6 +579,7 @@ export const MenuManagement: React.FC = () => {
         if (categoryError) console.error('Error adding category:', categoryError);
       }
 
+      invalidateCache();
       await loadMenuData();
 
       showToast(
@@ -535,9 +594,7 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
-  // ---------------------------
-  // Archive
-  // ---------------------------
+  // ====== Archive ======
   const handleArchiveProduct = async (productId: string) => {
     try {
       const { error } = await supabase
@@ -547,7 +604,7 @@ export const MenuManagement: React.FC = () => {
 
       if (error) throw error;
 
-      // Refrescamos por consistencia de filtros server-side (opcional: podrías actualizar local)
+      invalidateCache();
       await loadMenuData();
 
       showToast('info', t('productArchivedTitle'), t('productArchivedMessage'), 4000);
@@ -557,9 +614,7 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
-  // ---------------------------
-  // Drag handlers (NO se modifica lógica de ordenamiento aquí)
-  // ---------------------------
+  // ====== Drag handlers (sin ordenamiento global aquí) ======
   const handleDragStart = (e: React.DragEvent, product: ProductListItem) => {
     setDraggedProduct(product);
     e.dataTransfer.effectAllowed = 'move';
@@ -570,19 +625,14 @@ export const MenuManagement: React.FC = () => {
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = async (e: React.DragEvent, targetProduct: ProductListItem) => {
+  const handleDrop = async (e: React.DragEvent, _targetProduct: ProductListItem) => {
     e.preventDefault();
-
-    // IMPORTANTE: no implementamos ordenamiento aquí por tu indicación.
-    // Mantengo el "drag" visual pero sin afectar display_order global.
-    // Si prefieres deshabilitarlo totalmente en esta pestaña, lo hacemos.
     setDraggedProduct(null);
-    showToast('info', 'Info', 'El reordenamiento se gestiona en el menú público (orden global).', 2500);
+    showToast('info', 'Info', 'El orden global se gestiona en el menú público (lista completa).', 2500);
   };
 
   const handleDragEnd = () => setDraggedProduct(null);
 
-  // Mantengo tus botones Up/Down (si los quieres para orden global aquí, lo hacemos con endpoints dedicados)
   const moveProductUp = async (_productId: string) => {
     showToast('info', 'Info', 'El orden global se gestiona en el menú público.', 2500);
   };
@@ -802,9 +852,7 @@ export const MenuManagement: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="absolute top-2 right-2">
-                    {getStatusBadge(product.status)}
-                  </div>
+                  <div className="absolute top-2 right-2">{getStatusBadge(product.status)}</div>
 
                   {product.images?.length > 1 && (
                     <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded-lg">
@@ -816,17 +864,11 @@ export const MenuManagement: React.FC = () => {
                 {/* Info */}
                 <div className="p-4">
                   <div className="mb-2">
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">
-                      {product.name}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      {getCategoryName(product.category_id)}
-                    </p>
+                    <h3 className="text-lg font-semibold text-gray-900 truncate">{product.name}</h3>
+                    <p className="text-sm text-gray-600">{getCategoryName(product.category_id)}</p>
                   </div>
 
-                  <p className="text-gray-700 text-sm mb-3 line-clamp-2">
-                    {product.description}
-                  </p>
+                  <p className="text-gray-700 text-sm mb-3 line-clamp-2">{product.description}</p>
 
                   {/* Price precomputed */}
                   <div className="mb-4">
@@ -862,10 +904,7 @@ export const MenuManagement: React.FC = () => {
                         variant="ghost"
                         size="sm"
                         icon={Edit}
-                        onClick={() => {
-                          setEditingProductId(product.id);
-                          setShowProductModal(true);
-                        }}
+                        onClick={() => handleEditProduct(product)}
                         title={t('editProduct')}
                       />
                       <Button
@@ -899,9 +938,7 @@ export const MenuManagement: React.FC = () => {
                         <option value="archived">{t('archived')}</option>
                       </select>
 
-                      {product.sku && (
-                        <span className="text-xs text-gray-500">{product.sku}</span>
-                      )}
+                      {product.sku && <span className="text-xs text-gray-500">{product.sku}</span>}
                     </div>
                   </div>
                 </div>
@@ -913,7 +950,8 @@ export const MenuManagement: React.FC = () => {
           {totalProducts > PAGE_SIZE && (
             <div className="flex items-center justify-between mt-6 bg-white p-3 rounded-lg shadow border">
               <div className="text-sm text-gray-600">
-                Página <strong>{page}</strong> de <strong>{totalPages}</strong> · {totalProducts} productos
+                Página <strong>{page}</strong> de <strong>{totalPages}</strong> · {totalProducts}{' '}
+                productos
               </div>
 
               <div className="flex gap-2">
