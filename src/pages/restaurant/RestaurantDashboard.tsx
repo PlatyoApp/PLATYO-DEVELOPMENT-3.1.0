@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, ShoppingBag, Menu, Eye, TrendingUp, HelpCircle } from 'lucide-react';
 import { Product, Order, Category, Subscription } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -9,112 +9,177 @@ import { Badge } from '../../components/ui/Badge';
 import { formatCurrency } from '../../utils/currencyUtils';
 import { TutorialModal } from '../../components/restaurant/TutorialModal';
 
+type RecentOrderRow = Pick<Order, 'id' | 'created_at' | 'status' | 'total'> & {
+  customer_name?: string | null;
+};
+
 export const RestaurantDashboard: React.FC = () => {
   const { restaurant } = useAuth();
   const { t } = useLanguage();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+
+  // Antes cargabas arrays completos. Ahora guardamos contadores / mínimos.
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [activeProducts, setActiveProducts] = useState(0);
+
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [todayOrders, setTodayOrders] = useState(0);
+
+  const [categoriesCount, setCategoriesCount] = useState(0);
+
+  const [currentMonthRevenue, setCurrentMonthRevenue] = useState(0);
+
+  const [recentOrders, setRecentOrders] = useState<RecentOrderRow[]>([]);
+
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
 
   useEffect(() => {
-    if (restaurant) {
-      loadDashboardData();
-      loadSubscription();
-    }
-  }, [restaurant]);
+    if (!restaurant?.id) return;
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurant?.id]);
 
-  const loadSubscription = async () => {
-    if (!restaurant?.id) {
-      console.log('[Dashboard] No restaurant ID available yet');
-      return;
-    }
-
-    console.log('[Dashboard] Loading subscription for restaurant:', restaurant.id);
+  const loadAll = async () => {
+    if (!restaurant?.id) return;
 
     try {
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('restaurant_id', restaurant.id)
-        .eq('status', 'active')
-        .maybeSingle();
+      // Fechas para filtros
+      const now = new Date();
 
-      if (error) {
-        console.error('[Dashboard] Error loading subscription:', error);
-        return;
-      }
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(now);
+      endOfToday.setHours(23, 59, 59, 999);
 
-      console.log('[Dashboard] Subscription loaded:', data);
-      setCurrentSubscription(data);
-    } catch (err) {
-      console.error('[Dashboard] Exception loading subscription:', err);
-    }
-  };
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const loadDashboardData = async () => {
-    if (!restaurant?.id) {
-      console.log('[Dashboard] No restaurant ID available for loading data');
-      return;
-    }
+      // Estados que cuentan para revenue (los que ya tenías en tu función)
+      const revenueStatuses: Order['status'][] = ['delivered', 'ready', 'confirmed'];
 
-    console.log('[Dashboard] Loading dashboard data for restaurant:', restaurant.id);
+      // Ejecutar todo en paralelo y con selects mínimos
+      const [
+        subscriptionRes,
 
-    try {
-      const { data: productsData, error: productsError } = await supabase
-        .from('products')
-        .select('*')
-        .eq('restaurant_id', restaurant.id);
+        // Productos: solo status para contar (sin traer payload)
+        productsRes,
 
-      if (productsError) {
-        console.error('[Dashboard] Error loading products:', productsError);
+        // Órdenes: total count (sin traer filas)
+        ordersCountRes,
+
+        // Órdenes de hoy: count con rango por created_at
+        todayOrdersCountRes,
+
+        // Revenue mes: traer SOLO totals del mes (y solo estados válidos) y sumar en cliente
+        monthOrdersTotalsRes,
+
+        // Recent: solo 5 filas mínimas
+        recentOrdersRes,
+
+        // Categorías: count de activas (sin traer filas)
+        categoriesCountRes,
+      ] = await Promise.all([
+        supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('restaurant_id', restaurant.id)
+          .eq('status', 'active')
+          .maybeSingle(),
+
+        supabase
+          .from('products')
+          .select('id,status')
+          .eq('restaurant_id', restaurant.id),
+
+        supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('restaurant_id', restaurant.id),
+
+        supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('restaurant_id', restaurant.id)
+          .gte('created_at', startOfToday.toISOString())
+          .lte('created_at', endOfToday.toISOString()),
+
+        supabase
+          .from('orders')
+          .select('total,created_at,status')
+          .eq('restaurant_id', restaurant.id)
+          .in('status', revenueStatuses as any)
+          .gte('created_at', startOfMonth.toISOString())
+          .lte('created_at', endOfMonth.toISOString()),
+
+        supabase
+          .from('orders')
+          .select('id,created_at,status,total,customer_name')
+          .eq('restaurant_id', restaurant.id)
+          .order('created_at', { ascending: false })
+          .limit(5),
+
+        supabase
+          .from('categories')
+          .select('id', { count: 'exact', head: true })
+          .eq('restaurant_id', restaurant.id)
+          .eq('is_active', true),
+      ]);
+
+      // Subscription
+      if (subscriptionRes.error) {
+        console.error('[Dashboard] Error loading subscription:', subscriptionRes.error);
       } else {
-        console.log('[Dashboard] Products loaded:', productsData?.length || 0);
+        setCurrentSubscription(subscriptionRes.data ?? null);
       }
 
-      const { data: ordersData, error: ordersError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('restaurant_id', restaurant.id);
-
-      if (ordersError) {
-        console.error('[Dashboard] Error loading orders:', ordersError);
+      // Productos
+      if (productsRes.error) {
+        console.error('[Dashboard] Error loading products:', productsRes.error);
       } else {
-        console.log('[Dashboard] Orders loaded:', ordersData?.length || 0);
+        const rows = productsRes.data ?? [];
+        setTotalProducts(rows.length);
+        setActiveProducts(rows.reduce((acc, p: any) => acc + (p.status === 'active' ? 1 : 0), 0));
       }
 
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('restaurant_id', restaurant.id)
-        .eq('is_active', true);
-
-      if (categoriesError) {
-        console.error('[Dashboard] Error loading categories:', categoriesError);
+      // Órdenes total
+      if (ordersCountRes.error) {
+        console.error('[Dashboard] Error loading orders count:', ordersCountRes.error);
       } else {
-        console.log('[Dashboard] Categories loaded:', categoriesData?.length || 0);
+        setTotalOrders(ordersCountRes.count ?? 0);
       }
 
-      setProducts(productsData || []);
-      setOrders(ordersData || []);
-      setCategories(categoriesData || []);
+      // Órdenes hoy
+      if (todayOrdersCountRes.error) {
+        console.error('[Dashboard] Error loading today orders count:', todayOrdersCountRes.error);
+      } else {
+        setTodayOrders(todayOrdersCountRes.count ?? 0);
+      }
+
+      // Revenue mes (sum en cliente, pero dataset ya está acotado al mes + estados)
+      if (monthOrdersTotalsRes.error) {
+        console.error('[Dashboard] Error loading month totals:', monthOrdersTotalsRes.error);
+      } else {
+        const totals = monthOrdersTotalsRes.data ?? [];
+        const sum = totals.reduce((acc: number, o: any) => acc + (Number(o.total) || 0), 0);
+        setCurrentMonthRevenue(sum);
+      }
+
+      // Recent orders
+      if (recentOrdersRes.error) {
+        console.error('[Dashboard] Error loading recent orders:', recentOrdersRes.error);
+      } else {
+        setRecentOrders((recentOrdersRes.data ?? []) as any);
+      }
+
+      // Categorías count
+      if (categoriesCountRes.error) {
+        console.error('[Dashboard] Error loading categories count:', categoriesCountRes.error);
+      } else {
+        setCategoriesCount(categoriesCountRes.count ?? 0);
+      }
     } catch (err) {
       console.error('[Dashboard] Exception loading dashboard data:', err);
     }
-  };
-
-  const getCurrentMonthRevenue = () => {
-    const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-    return orders.filter(order => {
-      const orderDate = new Date(order.created_at);
-      return (order.status === 'delivered' || order.status === 'ready' || order.status === 'confirmed') &&
-             orderDate >= currentMonthStart &&
-             orderDate <= currentMonthEnd;
-    }).reduce((sum, order) => sum + (order.total || 0), 0);
   };
 
   const getCurrentPlanName = () => {
@@ -123,22 +188,16 @@ export const RestaurantDashboard: React.FC = () => {
     return plan ? plan.name : currentSubscription.plan_name.toUpperCase();
   };
 
-  const stats = {
-    totalProducts: products.length,
-    activeProducts: products.filter(p => p.status === 'active').length,
-    totalOrders: orders.length,
-    todayOrders: orders.filter(o => {
-      const today = new Date().toDateString();
-      const orderDate = new Date(o.created_at).toDateString();
-      return today === orderDate;
-    }).length,
-    currentMonthRevenue: getCurrentMonthRevenue(),
-    categories: categories.length,
-  };
-
-  const recentOrders = orders
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
+  const stats = useMemo(() => {
+    return {
+      totalProducts,
+      activeProducts,
+      totalOrders,
+      todayOrders,
+      currentMonthRevenue,
+      categories: categoriesCount,
+    };
+  }, [totalProducts, activeProducts, totalOrders, todayOrders, currentMonthRevenue, categoriesCount]);
 
   const getStatusBadge = (status: Order['status']) => {
     switch (status) {
@@ -198,9 +257,9 @@ export const RestaurantDashboard: React.FC = () => {
                 </span>
               </div>
             </div>
-          <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
-            <Menu className="h-6 w-6 md:h-7 md:w-7 text-white" />
-          </div>
+            <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+              <Menu className="h-6 w-6 md:h-7 md:w-7 text-white" />
+            </div>
           </div>
         </div>
 
@@ -215,9 +274,9 @@ export const RestaurantDashboard: React.FC = () => {
                 </span>
               </div>
             </div>
-          <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
-            <ShoppingBag className="h-6 w-6 md:h-7 md:w-7 text-white" />
-          </div>
+            <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+              <ShoppingBag className="h-6 w-6 md:h-7 md:w-7 text-white" />
+            </div>
           </div>
         </div>
 
@@ -233,10 +292,10 @@ export const RestaurantDashboard: React.FC = () => {
                   {t('statCurrentMonthSubtitle')}
                 </span>
               </div>
-                                    </div>
-          <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
-            <TrendingUp className="h-6 w-6 md:h-7 md:w-7 text-white" />
-          </div>
+            </div>
+            <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+              <TrendingUp className="h-6 w-6 md:h-7 md:w-7 text-white" />
+            </div>
           </div>
         </div>
 
@@ -251,9 +310,9 @@ export const RestaurantDashboard: React.FC = () => {
                 </span>
               </div>
             </div>
-          <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
-            <BarChart3 className="h-6 w-6 md:h-7 md:w-7 text-white" />
-          </div>
+            <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+              <BarChart3 className="h-6 w-6 md:h-7 md:w-7 text-white" />
+            </div>
           </div>
         </div>
       </div>
@@ -301,6 +360,36 @@ export const RestaurantDashboard: React.FC = () => {
               {restaurant?.settings?.table_orders?.enabled ? t('enabled') : t('disabled')}
             </Badge>
           </div>
+
+          {/* ✅ Extra: lista de órdenes recientes (ya viene limitada a 5) */}
+          {recentOrders.length > 0 && (
+            <div className="bg-gray-50 p-3 md:p-4 rounded-lg sm:col-span-2 lg:col-span-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
+                {t('recentOrders') ?? 'Órdenes recientes'}
+              </p>
+              <div className="space-y-2">
+                {recentOrders.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">
+                        {o.customer_name ? o.customer_name : `${t('order') ?? 'Orden'} #${String(o.id).slice(0, 6)}`}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(o.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {getStatusBadge(o.status)}
+                      <div className="text-sm font-semibold text-gray-900">
+                        {formatCurrency(Number(o.total) || 0, restaurant?.settings?.currency || 'USD')}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
