@@ -2687,107 +2687,90 @@ export const RestaurantSettings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Featured Products Selector */}
-              <div className="space-y-3 bg-white border border-gray-200 rounded-lg p-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Star className="w-5 h-5 text-orange-600" />
-                  <label className="block text-sm font-medium text-gray-700">
-                    {t('featured_products_title')}
-                  </label>
-                  <label className="block text-sm font-medium text-gray-700">
-                    (Max. 5)
-                  </label>
-                </div>
-              
-                <p className="text-xs text-gray-600 mb-4">
-                  {t('featured_products_hint')}
-                </p>
-              
-                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
-                  <div className="space-y-2">
-                    {products.map((product: any) => {
-                      const isSelected = validSelectedFeaturedIds.includes(product.id);
-                      const canSelect = validSelectedFeaturedIds.length < 5 || isSelected;
-              const selectedFeaturedIds = formData.settings.promo?.featured_product_ids || [];
-
-const productIdSet = useMemo(() => {
-  return new Set(products.map((p: any) => p.id));
-}, [products]);
-
-const validSelectedFeaturedIds = useMemo(() => {
-  return selectedFeaturedIds.filter((id: string) => productIdSet.has(id));
-}, [selectedFeaturedIds, productIdSet]);
-
-// Limpieza automática de IDs inválidos (fuera del render)
-useEffect(() => {
-  if (validSelectedFeaturedIds.length !== selectedFeaturedIds.length) {
-    updateFormData('settings.promo.featured_product_ids', validSelectedFeaturedIds);
-  }
-  // Importante: dependencias para que solo corra cuando cambie la validez
-}, [selectedFeaturedIds.length, validSelectedFeaturedIds.length, updateFormData]); 
-              
-                      return (
-                        <label
-                          key={product.id}
-                          className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-orange-50 border-orange-300'
-                              : canSelect
-                              ? 'bg-white border-gray-200 hover:border-gray-300'
-                              : 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            disabled={!canSelect}
-                            onChange={(e) => {
-                              let newIds = isSelected
-                                ? validSelectedFeaturedIds.filter((id: string) => id !== product.id)
-                                : [...validSelectedFeaturedIds, product.id].slice(0, 5);
-              
-                              // Si intenta marcar cuando ya hay 5, slice(0,5) lo limita sin lógica extra
-                              updateFormData('settings.promo.featured_product_ids', newIds);
-                            }}
-                            className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                          />
-              
-                          {product.images?.[0] && (
-                            <img
-                              src={product.images[0]}
-                              alt={product.name}
-                              loading="lazy"
-                              decoding="async"
-                              className="w-12 h-12 object-cover rounded-lg"
-                            />
-                          )}
-              
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {product.name}
-                            </p>
-                            {/* Descripción eliminada para render más rápido */}
-                          </div>
-              
-                          {isSelected && (
-                            <Badge variant="success">{t('featured_products_label')}</Badge>
-                          )}
-                        </label>
-                      );
-                    })}
-              
-                    {products.length === 0 && (
-                      <p className="text-center text-gray-500 text-sm py-4">
-                        {t('noProductsAdded')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              
-                <p className="text-xs text-gray-600">
-                  {validSelectedFeaturedIds.length} {t('featured_products_selected')}
-                </p>
+            {/* Featured Products Selector */}
+            <div className="space-y-3 bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Star className="w-5 h-5 text-orange-600" />
+                <label className="block text-sm font-medium text-gray-700">
+                  {t('featured_products_title')}
+                </label>
+                <label className="block text-sm font-medium text-gray-700">
+                  (Max. 5)
+                </label>
               </div>
+            
+              <p className="text-xs text-gray-600 mb-4">
+                {t('featured_products_hint')}
+              </p>
+            
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
+                <div className="space-y-2">
+                  {products.map((product: any) => {
+                    const isSelected = validSelectedFeaturedIds.includes(product.id);
+                    const canSelect = validSelectedFeaturedIds.length < 5 || isSelected;
+            
+                    return (
+                      <label
+                        key={product.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-orange-50 border-orange-300'
+                            : canSelect
+                            ? 'bg-white border-gray-200 hover:border-gray-300'
+                            : 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={!canSelect}
+                          onChange={(e) => {
+                            let newIds = isSelected
+                              ? validSelectedFeaturedIds.filter((id: string) => id !== product.id)
+                              : [...validSelectedFeaturedIds, product.id].slice(0, 5);
+            
+                            // Si intenta marcar cuando ya hay 5, slice(0,5) lo limita sin lógica extra
+                            updateFormData('settings.promo.featured_product_ids', newIds);
+                          }}
+                          className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                        />
+            
+                        {product.images?.[0] && (
+                          <img
+                            src={product.images[0]}
+                            alt={product.name}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-12 h-12 object-cover rounded-lg"
+                          />
+                        )}
+            
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {product.name}
+                          </p>
+                          {/* Descripción eliminada para render más rápido */}
+                        </div>
+            
+                        {isSelected && (
+                          <Badge variant="success">{t('featured_products_label')}</Badge>
+                        )}
+                      </label>
+                    );
+                  })}
+            
+                  {products.length === 0 && (
+                    <p className="text-center text-gray-500 text-sm py-4">
+                      {t('noProductsAdded')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            
+              <p className="text-xs text-gray-600">
+                {validSelectedFeaturedIds.length} {t('featured_products_selected')}
+              </p>
+            </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-start gap-2">
