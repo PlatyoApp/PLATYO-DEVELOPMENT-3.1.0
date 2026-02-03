@@ -33,7 +33,9 @@ export const CategoriesManagement: React.FC = () => {
 
   // ===== Config =====
   const CACHE_TTL_MS = 60_000; // 60s
-  const cacheKey = (restaurantId: string) => `categories_cache_v1:${restaurantId}`;
+  const cacheKey = (restaurantId: string) => `categories_cache_v2:${restaurantId}`;
+
+  const PAGE_SIZE = 15;
 
   // ===== State =====
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,6 +45,8 @@ export const CategoriesManagement: React.FC = () => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   const [loading, setLoading] = useState(false);
+
+  const [page, setPage] = useState(1);
 
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -57,11 +61,7 @@ export const CategoriesManagement: React.FC = () => {
     show: boolean;
     categoryId: string;
     categoryName: string;
-  }>({
-    show: false,
-    categoryId: '',
-    categoryName: ''
-  });
+  }>({ show: false, categoryId: '', categoryName: '' });
 
   const [draggedCategory, setDraggedCategory] = useState<Category | null>(null);
 
@@ -70,6 +70,11 @@ export const CategoriesManagement: React.FC = () => {
     const id = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 250);
     return () => clearTimeout(id);
   }, [searchTerm]);
+
+  // Cuando cambia búsqueda, vuelve a página 1
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchTerm]);
 
   // ===== Cache helpers =====
   const saveCache = (cats: Category[]) => {
@@ -113,17 +118,8 @@ export const CategoriesManagement: React.FC = () => {
   useEffect(() => {
     if (!restaurant?.id) return;
 
-    // Intentar cache primero
     const loaded = tryLoadFromCache();
-
-    // Cargar en background si no había cache
-    if (!loaded) {
-      loadCategories();
-    } else {
-      // cache fresco: opcionalmente refrescar en background (si quieres)
-      // loadCategories();
-    }
-
+    if (!loaded) loadCategories();
     loadSubscription();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.id]);
@@ -151,7 +147,6 @@ export const CategoriesManagement: React.FC = () => {
 
     setLoading(true);
 
-    // Traemos solo columnas necesarias para esta vista
     const { data, error } = await supabase
       .from('categories')
       .select('id, restaurant_id, name, description, icon, display_order, is_active, created_at, updated_at')
@@ -174,7 +169,6 @@ export const CategoriesManagement: React.FC = () => {
   // ===== Derived =====
   const filteredCategories = useMemo(() => {
     if (!debouncedSearchTerm) return categories;
-
     const q = debouncedSearchTerm.toLowerCase();
     return categories.filter((category) => {
       const n = category.name?.toLowerCase() || '';
@@ -182,6 +176,19 @@ export const CategoriesManagement: React.FC = () => {
       return n.includes(q) || d.includes(q);
     });
   }, [categories, debouncedSearchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
+
+  // Ajuste de page si queda fuera de rango (por delete o búsqueda)
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedCategories = useMemo(() => {
+    const from = (page - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE;
+    return filteredCategories.slice(from, to);
+  }, [filteredCategories, page]);
 
   // ===== CRUD =====
   const handleSave = async () => {
@@ -200,7 +207,6 @@ export const CategoriesManagement: React.FC = () => {
 
         if (error) throw error;
 
-        // Update local (sin recargar todo)
         setCategories((prev) => {
           const next = prev.map((c) =>
             c.id === editingCategory.id
@@ -228,7 +234,6 @@ export const CategoriesManagement: React.FC = () => {
 
         if (error) throw error;
 
-        // Insert local
         setCategories((prev) => {
           const next = [...prev, inserted as Category].sort(
             (a, b) => (a.display_order || 0) - (b.display_order || 0)
@@ -247,7 +252,7 @@ export const CategoriesManagement: React.FC = () => {
         4000
       );
 
-      invalidateCache(); // opcional: si quieres forzar refresco la próxima vez
+      invalidateCache();
     } catch (error: any) {
       console.error('Error saving category:', error);
       showToast('error', 'Error', error.message || 'No se pudo guardar la categoría');
@@ -340,7 +345,6 @@ export const CategoriesManagement: React.FC = () => {
     const bOrder = b.display_order || 0;
     if (aOrder === bOrder) return;
 
-    // Optimistic UI
     setCategories((prev) => {
       const next = prev.map((c) => {
         if (c.id === a.id) return { ...c, display_order: bOrder };
@@ -351,19 +355,12 @@ export const CategoriesManagement: React.FC = () => {
     });
 
     try {
-      const { error: e1 } = await supabase
-        .from('categories')
-        .update({ display_order: bOrder })
-        .eq('id', a.id);
+      const { error: e1 } = await supabase.from('categories').update({ display_order: bOrder }).eq('id', a.id);
       if (e1) throw e1;
 
-      const { error: e2 } = await supabase
-        .from('categories')
-        .update({ display_order: aOrder })
-        .eq('id', b.id);
+      const { error: e2 } = await supabase.from('categories').update({ display_order: aOrder }).eq('id', b.id);
       if (e2) throw e2;
 
-      // Guardar cache ya ordenado
       setCategories((prev) => {
         saveCache(prev);
         return prev;
@@ -373,15 +370,15 @@ export const CategoriesManagement: React.FC = () => {
     } catch (error) {
       console.error('Error swapping category order:', error);
       showToast('error', 'Error', 'No se pudo reordenar las categorías');
-      // fallback a reload
       await loadCategories();
     }
   };
 
   const moveCategory = async (categoryId: string, direction: 'up' | 'down') => {
-    // solo reorder si NO hay búsqueda (como tu UX actual)
+    // Solo reorder si NO hay búsqueda (igual que antes)
     if (debouncedSearchTerm) return;
 
+    // OJO: mover en el orden global (categories), no solo pagedCategories
     const idx = categories.findIndex((c) => c.id === categoryId);
     if (idx === -1) return;
 
@@ -391,13 +388,15 @@ export const CategoriesManagement: React.FC = () => {
     await swapDisplayOrder(categories[idx], categories[targetIdx]);
   };
 
-  // Drag & drop: actualiza SOLO el rango afectado (no toda la lista)
+  // Drag & drop: solo dentro de la página visible (porque es lo que renderizas)
   const handleDragStart = (e: React.DragEvent, category: Category) => {
+    if (debouncedSearchTerm) return;
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (debouncedSearchTerm) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
@@ -410,8 +409,14 @@ export const CategoriesManagement: React.FC = () => {
       return;
     }
 
-    // Solo permitimos reordenar cuando NO hay búsqueda
     if (debouncedSearchTerm) {
+      setDraggedCategory(null);
+      return;
+    }
+
+    // Para paginación: reordenamos solo dentro de la página actual
+    const pageIds = pagedCategories.map((c) => c.id);
+    if (!pageIds.includes(draggedCategory.id) || !pageIds.includes(targetCategory.id)) {
       setDraggedCategory(null);
       return;
     }
@@ -420,18 +425,15 @@ export const CategoriesManagement: React.FC = () => {
     const targetIndex = categories.findIndex((c) => c.id === targetCategory.id);
     if (draggedIndex === -1 || targetIndex === -1) return;
 
-    // Nuevo orden en memoria
     const next = [...categories];
     const [removed] = next.splice(draggedIndex, 1);
     next.splice(targetIndex, 0, removed);
 
-    // Calculamos rango afectado y re-asignamos display_order solo allí
+    // Rango afectado dentro del array global
     const start = Math.min(draggedIndex, targetIndex);
     const end = Math.max(draggedIndex, targetIndex);
-
     const affected = next.slice(start, end + 1);
 
-    // Tomamos los display_order existentes en ese rango, ordenados
     const orders = categories
       .slice(start, end + 1)
       .map((c) => c.display_order || 0)
@@ -439,7 +441,6 @@ export const CategoriesManagement: React.FC = () => {
 
     const updates = affected.map((c, i) => ({ id: c.id, display_order: orders[i] }));
 
-    // Optimistic UI
     const optimistic = next.map((c) => {
       const u = updates.find((x) => x.id === c.id);
       return u ? { ...c, display_order: u.display_order } : c;
@@ -453,12 +454,10 @@ export const CategoriesManagement: React.FC = () => {
         const { error } = await supabase.from('categories').update({ display_order: u.display_order }).eq('id', u.id);
         if (error) throw error;
       }
-
       setCategories((prev) => {
         saveCache(prev);
         return prev;
       });
-
       invalidateCache();
     } catch (error: any) {
       console.error('Error reordering categories:', error);
@@ -569,10 +568,8 @@ export const CategoriesManagement: React.FC = () => {
 
       {/* List */}
       {loading ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center text-gray-600">
-          {t('loading')}...
-        </div>
-      ) : filteredCategories.length === 0 ? (
+        <div className="bg-white rounded-lg shadow p-12 text-center text-gray-600">{t('loading')}...</div>
+      ) : pagedCategories.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <FolderOpen className="w-8 h-8 text-blue-600" />
@@ -591,110 +588,124 @@ export const CategoriesManagement: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredCategories.map((category, index) => (
-            <div
-              key={category.id}
-              draggable={!debouncedSearchTerm}
-              onDragStart={(e) => handleDragStart(e, category)}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, category)}
-              onDragEnd={handleDragEnd}
-              className={`bg-white rounded-lg shadow-sm border-2 transition-all ${
-                !debouncedSearchTerm ? 'cursor-move' : ''
-              } ${
-                draggedCategory?.id === category.id
-                  ? 'opacity-50 scale-95 border-blue-400'
-                  : 'border-gray-200 hover:shadow-md hover:border-blue-300'
-              }`}
-            >
-              <div className="flex flex-wrap md:flex-nowrap items-center gap-4 p-4 overflow-hidden">
-                {/* Drag Handle */}
-                {!debouncedSearchTerm && (
-                  <div className="flex-shrink-0">
-                    <GripVertical className="w-5 h-5 text-gray-400" />
-                  </div>
-                )}
-
-                {/* Order */}
-                <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <span className="text-sm font-bold text-blue-600">#{category.display_order}</span>
-                </div>
-
-                {/* Icon */}
-                <div className="flex-shrink-0 w-16 h-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex items-center justify-center">
-                  {category.icon ? (
-                    <span className="text-3xl">{category.icon}</span>
-                  ) : (
-                    <FolderOpen className="w-8 h-8 text-gray-300" />
+        <>
+          <div className="space-y-3">
+            {pagedCategories.map((category, index) => (
+              <div
+                key={category.id}
+                draggable={!debouncedSearchTerm}
+                onDragStart={(e) => handleDragStart(e, category)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, category)}
+                onDragEnd={handleDragEnd}
+                className={`bg-white rounded-lg shadow-sm border-2 transition-all ${
+                  !debouncedSearchTerm ? 'cursor-move' : ''
+                } ${
+                  draggedCategory?.id === category.id
+                    ? 'opacity-50 scale-95 border-blue-400'
+                    : 'border-gray-200 hover:shadow-md hover:border-blue-300'
+                }`}
+              >
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-4 p-4 overflow-hidden">
+                  {!debouncedSearchTerm && (
+                    <div className="flex-shrink-0">
+                      <GripVertical className="w-5 h-5 text-gray-400" />
+                    </div>
                   )}
-                </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">{category.name}</h3>
-                    <Badge variant={category.is_active ? 'success' : 'gray'}>
-                      {category.is_active ? t('active') : t('inactive')}
-                    </Badge>
+                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <span className="text-sm font-bold text-blue-600">#{category.display_order}</span>
                   </div>
-                  <p className="text-sm text-gray-600 line-clamp-1">
-                    {category.description || 'Sin descripción'}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {t('categoriesCreated')}: {new Date(category.created_at).toLocaleDateString()}
-                  </p>
-                </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end w-full md:w-auto mt-2 md:mt-0">
-                  <button
-                    onClick={() => moveCategory(category.id, 'up')}
-                    disabled={index === 0 || !!debouncedSearchTerm}
-                    className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title={debouncedSearchTerm ? 'Clear search to reorder' : 'Move up'}
-                  >
-                    <ArrowUp className="w-4 h-4 text-gray-600" />
-                  </button>
-
-                  <button
-                    onClick={() => moveCategory(category.id, 'down')}
-                    disabled={index === filteredCategories.length - 1 || !!debouncedSearchTerm}
-                    className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    title={debouncedSearchTerm ? 'Clear search to reorder' : 'Move down'}
-                  >
-                    <ArrowDown className="w-4 h-4 text-gray-600" />
-                  </button>
-
-                  <button
-                    onClick={() => handleEdit(category)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <Pencil className="w-4 h-4 text-blue-600" />
-                  </button>
-
-                  <button
-                    onClick={() => toggleActive(category.id)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    {category.is_active ? (
-                      <EyeOff className="w-4 h-4 text-orange-600" />
+                  <div className="flex-shrink-0 w-16 h-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex items-center justify-center">
+                    {category.icon ? (
+                      <span className="text-3xl">{category.icon}</span>
                     ) : (
-                      <Eye className="w-4 h-4 text-green-600" />
+                      <FolderOpen className="w-8 h-8 text-gray-300" />
                     )}
-                  </button>
+                  </div>
 
-                  <button
-                    onClick={() => openDeleteConfirm(category)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4 text-red-600" />
-                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h3 className="text-lg font-semibold text-gray-900 truncate">{category.name}</h3>
+                      <Badge variant={category.is_active ? 'success' : 'gray'}>
+                        {category.is_active ? t('active') : t('inactive')}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-600 line-clamp-1">{category.description || 'Sin descripción'}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {t('categoriesCreated')}: {new Date(category.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end w-full md:w-auto mt-2 md:mt-0">
+                    <button
+                      onClick={() => moveCategory(category.id, 'up')}
+                      disabled={index === 0 || !!debouncedSearchTerm}
+                      className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title={debouncedSearchTerm ? 'Clear search to reorder' : 'Move up'}
+                    >
+                      <ArrowUp className="w-4 h-4 text-gray-600" />
+                    </button>
+
+                    <button
+                      onClick={() => moveCategory(category.id, 'down')}
+                      disabled={index === pagedCategories.length - 1 || !!debouncedSearchTerm}
+                      className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title={debouncedSearchTerm ? 'Clear search to reorder' : 'Move down'}
+                    >
+                      <ArrowDown className="w-4 h-4 text-gray-600" />
+                    </button>
+
+                    <button onClick={() => handleEdit(category)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                      <Pencil className="w-4 h-4 text-blue-600" />
+                    </button>
+
+                    <button onClick={() => toggleActive(category.id)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                      {category.is_active ? (
+                        <EyeOff className="w-4 h-4 text-orange-600" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-green-600" />
+                      )}
+                    </button>
+
+                    <button onClick={() => openDeleteConfirm(category)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </button>
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* Pagination UI */}
+          {filteredCategories.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between mt-6 bg-white p-3 rounded-lg shadow border">
+              <div className="text-sm text-gray-600">
+                Página <strong>{page}</strong> de <strong>{totalPages}</strong> · {filteredCategories.length} categorías
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Siguiente
+                </Button>
+              </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {/* Modal */}
