@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, ShoppingBag, Menu, Eye, TrendingUp, HelpCircle } from 'lucide-react';
-import { Product, Order, Category, Subscription } from '../../types';
+import { Order, Subscription } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { availablePlans } from '../../lib/plans';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,15 +9,10 @@ import { Badge } from '../../components/ui/Badge';
 import { formatCurrency } from '../../utils/currencyUtils';
 import { TutorialModal } from '../../components/restaurant/TutorialModal';
 
-type RecentOrderRow = Pick<Order, 'id' | 'created_at' | 'status' | 'total'> & {
-  customer_name?: string | null;
-};
-
 export const RestaurantDashboard: React.FC = () => {
   const { restaurant } = useAuth();
   const { t } = useLanguage();
 
-  // Antes cargabas arrays completos. Ahora guardamos contadores / mínimos.
   const [totalProducts, setTotalProducts] = useState(0);
   const [activeProducts, setActiveProducts] = useState(0);
 
@@ -27,8 +22,6 @@ export const RestaurantDashboard: React.FC = () => {
   const [categoriesCount, setCategoriesCount] = useState(0);
 
   const [currentMonthRevenue, setCurrentMonthRevenue] = useState(0);
-
-  const [recentOrders, setRecentOrders] = useState<RecentOrderRow[]>([]);
 
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -43,7 +36,6 @@ export const RestaurantDashboard: React.FC = () => {
     if (!restaurant?.id) return;
 
     try {
-      // Fechas para filtros
       const now = new Date();
 
       const startOfToday = new Date(now);
@@ -54,29 +46,18 @@ export const RestaurantDashboard: React.FC = () => {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-      // Estados que cuentan para revenue (los que ya tenías en tu función)
       const revenueStatuses: Order['status'][] = ['delivered', 'ready', 'confirmed'];
 
-      // Ejecutar todo en paralelo y con selects mínimos
       const [
         subscriptionRes,
 
-        // Productos: solo status para contar (sin traer payload)
         productsRes,
 
-        // Órdenes: total count (sin traer filas)
         ordersCountRes,
-
-        // Órdenes de hoy: count con rango por created_at
         todayOrdersCountRes,
 
-        // Revenue mes: traer SOLO totals del mes (y solo estados válidos) y sumar en cliente
         monthOrdersTotalsRes,
 
-        // Recent: solo 5 filas mínimas
-        recentOrdersRes,
-
-        // Categorías: count de activas (sin traer filas)
         categoriesCountRes,
       ] = await Promise.all([
         supabase
@@ -86,16 +67,19 @@ export const RestaurantDashboard: React.FC = () => {
           .eq('status', 'active')
           .maybeSingle(),
 
+        // Productos: solo status para contar
         supabase
           .from('products')
           .select('id,status')
           .eq('restaurant_id', restaurant.id),
 
+        // Total órdenes: solo count
         supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
           .eq('restaurant_id', restaurant.id),
 
+        // Órdenes de hoy: solo count con rango
         supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
@@ -103,6 +87,7 @@ export const RestaurantDashboard: React.FC = () => {
           .gte('created_at', startOfToday.toISOString())
           .lte('created_at', endOfToday.toISOString()),
 
+        // Revenue mes: traer solo totales del mes (acotado por fechas + status)
         supabase
           .from('orders')
           .select('total,created_at,status')
@@ -111,13 +96,7 @@ export const RestaurantDashboard: React.FC = () => {
           .gte('created_at', startOfMonth.toISOString())
           .lte('created_at', endOfMonth.toISOString()),
 
-        supabase
-          .from('orders')
-          .select('id,created_at,status,total,customer_name')
-          .eq('restaurant_id', restaurant.id)
-          .order('created_at', { ascending: false })
-          .limit(5),
-
+        // Categorías activas: solo count
         supabase
           .from('categories')
           .select('id', { count: 'exact', head: true })
@@ -138,7 +117,7 @@ export const RestaurantDashboard: React.FC = () => {
       } else {
         const rows = productsRes.data ?? [];
         setTotalProducts(rows.length);
-        setActiveProducts(rows.reduce((acc, p: any) => acc + (p.status === 'active' ? 1 : 0), 0));
+        setActiveProducts(rows.reduce((acc: number, p: any) => acc + (p.status === 'active' ? 1 : 0), 0));
       }
 
       // Órdenes total
@@ -155,20 +134,13 @@ export const RestaurantDashboard: React.FC = () => {
         setTodayOrders(todayOrdersCountRes.count ?? 0);
       }
 
-      // Revenue mes (sum en cliente, pero dataset ya está acotado al mes + estados)
+      // Revenue mes
       if (monthOrdersTotalsRes.error) {
         console.error('[Dashboard] Error loading month totals:', monthOrdersTotalsRes.error);
       } else {
         const totals = monthOrdersTotalsRes.data ?? [];
         const sum = totals.reduce((acc: number, o: any) => acc + (Number(o.total) || 0), 0);
         setCurrentMonthRevenue(sum);
-      }
-
-      // Recent orders
-      if (recentOrdersRes.error) {
-        console.error('[Dashboard] Error loading recent orders:', recentOrdersRes.error);
-      } else {
-        setRecentOrders((recentOrdersRes.data ?? []) as any);
       }
 
       // Categorías count
@@ -184,7 +156,7 @@ export const RestaurantDashboard: React.FC = () => {
 
   const getCurrentPlanName = () => {
     if (!currentSubscription) return t('noSubscription');
-    const plan = availablePlans.find(p => p.id === currentSubscription.plan_name);
+    const plan = availablePlans.find((p) => p.id === currentSubscription.plan_name);
     return plan ? plan.name : currentSubscription.plan_name.toUpperCase();
   };
 
@@ -199,25 +171,6 @@ export const RestaurantDashboard: React.FC = () => {
     };
   }, [totalProducts, activeProducts, totalOrders, todayOrders, currentMonthRevenue, categoriesCount]);
 
-  const getStatusBadge = (status: Order['status']) => {
-    switch (status) {
-      case 'pending':
-        return <Badge variant="warning">{t('pending')}</Badge>;
-      case 'confirmed':
-        return <Badge variant="info">{t('confirmed')}</Badge>;
-      case 'preparing':
-        return <Badge variant="info">{t('preparing')}</Badge>;
-      case 'ready':
-        return <Badge variant="success">{t('ready')}</Badge>;
-      case 'delivered':
-        return <Badge variant="success">{t('delivered')}</Badge>;
-      case 'cancelled':
-        return <Badge variant="error">{t('cancelled')}</Badge>;
-      default:
-        return <Badge variant="gray">{t('orderStatusUnknown')}</Badge>;
-    }
-  };
-
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
@@ -229,7 +182,9 @@ export const RestaurantDashboard: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3">
           <div className="flex items-center gap-2 text-xs md:text-sm text-gray-500 bg-gray-50 px-3 md:px-4 py-2 rounded-lg border border-gray-200">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="hidden sm:inline">{t('lastUpdate')}: {new Date().toLocaleString()}</span>
+            <span className="hidden sm:inline">
+              {t('lastUpdate')}: {new Date().toLocaleString()}
+            </span>
             <span className="sm:hidden">{new Date().toLocaleTimeString()}</span>
           </div>
           <button
@@ -360,36 +315,6 @@ export const RestaurantDashboard: React.FC = () => {
               {restaurant?.settings?.table_orders?.enabled ? t('enabled') : t('disabled')}
             </Badge>
           </div>
-
-          {/* ✅ Extra: lista de órdenes recientes (ya viene limitada a 5) */}
-          {recentOrders.length > 0 && (
-            <div className="bg-gray-50 p-3 md:p-4 rounded-lg sm:col-span-2 lg:col-span-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
-                {t('recentOrders') ?? 'Órdenes recientes'}
-              </p>
-              <div className="space-y-2">
-                {recentOrders.map((o) => (
-                  <div key={o.id} className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
-                        {o.customer_name ? o.customer_name : `${t('order') ?? 'Orden'} #${String(o.id).slice(0, 6)}`}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {new Date(o.created_at).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {getStatusBadge(o.status)}
-                      <div className="text-sm font-semibold text-gray-900">
-                        {formatCurrency(Number(o.total) || 0, restaurant?.settings?.currency || 'USD')}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
         </div>
       </div>
     </div>
