@@ -50,7 +50,7 @@ export const MenuManagement: React.FC = () => {
   const { showToast } = useToast();
   const { t } = useLanguage();
 
-  const PAGE_SIZE = 24;
+  const PAGE_SIZE = 12;
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<ProductListItem[]>([]);
