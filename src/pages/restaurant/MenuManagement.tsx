@@ -897,6 +897,7 @@ export const MenuManagement: React.FC = () => {
                         size="sm"
                         icon={Copy}
                         onClick={() => handleDuplicateProduct(product)}
+                        className="text-blue-600 hover:text-blue-700"
                         title="Duplicar"
                       />
 
