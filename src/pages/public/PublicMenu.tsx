@@ -369,17 +369,24 @@ export const PublicMenu: React.FC = () => {
   }, [products, selectedCategory, searchTerm]);
 
   const featuredProducts = useMemo(() => {
+    console.log('[PublicMenu] Calculating featured products. Total products:', products.length);
+    console.log('[PublicMenu] Products with is_featured:', products.filter((p) => p.is_featured).length);
+    console.log('[PublicMenu] Featured IDs from settings:', restaurant?.settings.promo?.featured_product_ids);
+
     if (!restaurant?.settings.promo?.featured_product_ids?.length) {
-      return products.filter((p) => p.is_featured).slice(0, 5);
+      const featured = products.filter((p) => p.is_featured).slice(0, 5);
+      console.log('[PublicMenu] Using is_featured flag, found:', featured.length, 'products');
+      return featured;
     }
 
     const featuredIds = restaurant.settings.promo.featured_product_ids;
-    // Filter to only include products that actually exist in the products array
     const validFeatured = products.filter((p) => featuredIds.includes(p.id));
+    console.log('[PublicMenu] Using featured IDs from settings, found:', validFeatured.length, 'valid products');
 
-    // If no valid featured products found, fallback to is_featured flag
     if (validFeatured.length === 0) {
-      return products.filter((p) => p.is_featured).slice(0, 5);
+      const featured = products.filter((p) => p.is_featured).slice(0, 5);
+      console.log('[PublicMenu] No valid IDs, falling back to is_featured flag, found:', featured.length);
+      return featured;
     }
 
     return validFeatured.slice(0, 5);
@@ -857,7 +864,16 @@ export const PublicMenu: React.FC = () => {
           </div>
         </div>
       </header>
-      {!searchTerm && !showInitialSkeletons && featuredProducts.length > 0 && (
+      {(() => {
+        const shouldShow = !searchTerm && !showInitialSkeletons && featuredProducts.length > 0;
+        console.log('[PublicMenu] Featured section check:', {
+          searchTerm,
+          showInitialSkeletons,
+          featuredProductsLength: featuredProducts.length,
+          shouldShow
+        });
+        return shouldShow;
+      })() && (
         <div className="text-left px-[15px]  md:px-[210px] md:-mt-[9px] md:-mb-[30px] scale-[0.85]">
           {' '}
           {/*DF:pasar toda esta seccion completa*/}
@@ -891,7 +907,16 @@ export const PublicMenu: React.FC = () => {
         </div>
       )}
       {/* ANIMATED CAROUSEL */}
-      {!searchTerm && !showInitialSkeletons && featuredProducts.length > 0 && (
+      {(() => {
+        const shouldShow = !searchTerm && !showInitialSkeletons && featuredProducts.length > 0;
+        console.log('[PublicMenu] Carousel section check:', {
+          searchTerm,
+          showInitialSkeletons,
+          featuredProductsLength: featuredProducts.length,
+          shouldShow
+        });
+        return shouldShow;
+      })() && (
         <AnimatedCarousel
           products={featuredProducts}
           primaryColor={primaryColor}
