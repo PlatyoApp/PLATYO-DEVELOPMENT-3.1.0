@@ -892,14 +892,13 @@ export const MenuManagement: React.FC = () => {
                     <div className="flex gap-1">
                       <Button variant="ghost" size="sm" icon={Edit} onClick={() => handleEditProduct(product)} />
 
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={Copy}
-                        onClick={() => handleDuplicateProduct(product)}
-                        className="text-blue-600 hover:text-blue-700"
-                        title="Duplicar"
-                      />
+<Button
+  variant="ghost"
+  size="sm"
+  icon={Copy}
+  iconClassName="text-blue-600"
+  onClick={() => handleDuplicateProduct(product)}
+/>
 
                       <Button
                         variant="ghost"
