@@ -37,27 +37,12 @@ export const SuperAdminAnalytics: React.FC = () => {
     try {
       setLoading(true);
 
-const [restaurantsRes, subscriptionsRes, usersRes, plansRes] = await Promise.all([
-  // Solo traemos lo básico para la lista de restaurantes
-  supabase.from('restaurants')
-    .select('id, name, slug, is_active, created_at, owner_name')
-    .order('created_at', { ascending: false }),
-
-  // Solo lo importante de suscripciones
-  supabase.from('subscriptions')
-    .select('id, restaurant_id, plan_name, status, end_date')
-    .order('created_at', { ascending: false }),
-
-  // Solo lo básico de usuarios
-  supabase.from('users')
-    .select('id, email, full_name, role, created_at')
-    .order('created_at', { ascending: false }),
-
-  // Planes de suscripción
-  supabase.from('subscription_plans')
-    .select('id, name, price, billing_period')
-    .order('display_order', { ascending: true })
-]);
+      const [restaurantsRes, subscriptionsRes, usersRes, plansRes] = await Promise.all([
+        supabase.from('restaurants').select('*').order('created_at', { ascending: false }),
+        supabase.from('subscriptions').select('*').order('created_at', { ascending: false }),
+        supabase.from('users').select('*').order('created_at', { ascending: false }),
+        supabase.from('subscription_plans').select('*').order('display_order', { ascending: true })
+      ]);
 
       if (restaurantsRes.error) throw restaurantsRes.error;
       if (subscriptionsRes.error) throw subscriptionsRes.error;
