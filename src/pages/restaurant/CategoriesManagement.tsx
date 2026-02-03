@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import {
   Plus,
   Pencil,
@@ -32,9 +32,8 @@ export const CategoriesManagement: React.FC = () => {
   const navigate = useNavigate();
 
   // ===== Config =====
-  const CACHE_TTL_MS = 60_000; // 60s
-  const cacheKey = (restaurantId: string) => `categories_cache_v2:${restaurantId}`;
-
+  const CACHE_TTL_MS = 60_000;
+  const cacheKey = (restaurantId: string) => `categories_cache_v3:${restaurantId}`;
   const PAGE_SIZE = 15;
 
   // ===== State =====
@@ -65,10 +64,13 @@ export const CategoriesManagement: React.FC = () => {
 
   const [draggedCategory, setDraggedCategory] = useState<Category | null>(null);
 
+  // Para cambiar de página mientras arrastras (evita spam)
+  const dragPagingCooldownRef = useRef<number>(0);
+
   // ===== Debounce búsqueda =====
   useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 250);
-    return () => clearTimeout(id);
+    const id = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 250);
+    return () => window.clearTimeout(id);
   }, [searchTerm]);
 
   // Cuando cambia búsqueda, vuelve a página 1
@@ -81,10 +83,7 @@ export const CategoriesManagement: React.FC = () => {
     if (!restaurant?.id) return;
     sessionStorage.setItem(
       cacheKey(restaurant.id),
-      JSON.stringify({
-        ts: Date.now(),
-        categories: cats
-      })
+      JSON.stringify({ ts: Date.now(), categories: cats })
     );
   };
 
@@ -102,7 +101,6 @@ export const CategoriesManagement: React.FC = () => {
       const cached = JSON.parse(raw);
       const isFresh = Date.now() - cached.ts < CACHE_TTL_MS;
       if (!isFresh) return false;
-
       if (Array.isArray(cached.categories)) {
         setCategories(cached.categories);
         return true;
@@ -110,11 +108,10 @@ export const CategoriesManagement: React.FC = () => {
     } catch {
       return false;
     }
-
     return false;
   };
 
-  // ===== Effects =====
+  // ===== Initial load =====
   useEffect(() => {
     if (!restaurant?.id) return;
 
@@ -170,16 +167,16 @@ export const CategoriesManagement: React.FC = () => {
   const filteredCategories = useMemo(() => {
     if (!debouncedSearchTerm) return categories;
     const q = debouncedSearchTerm.toLowerCase();
-    return categories.filter((category) => {
-      const n = category.name?.toLowerCase() || '';
-      const d = (category.description || '').toLowerCase();
+    return categories.filter((c) => {
+      const n = c.name?.toLowerCase() || '';
+      const d = (c.description || '').toLowerCase();
       return n.includes(q) || d.includes(q);
     });
   }, [categories, debouncedSearchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
 
-  // Ajuste de page si queda fuera de rango (por delete o búsqueda)
+  // Ajuste de page si queda fuera de rango
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -244,6 +241,7 @@ export const CategoriesManagement: React.FC = () => {
       }
 
       handleCloseModal();
+      invalidateCache();
 
       showToast(
         'success',
@@ -251,8 +249,6 @@ export const CategoriesManagement: React.FC = () => {
         editingCategory ? t('messageCategoryUpdated') : t('messageCategoryCreated'),
         4000
       );
-
-      invalidateCache();
     } catch (error: any) {
       console.error('Error saving category:', error);
       showToast('error', 'Error', error.message || 'No se pudo guardar la categoría');
@@ -282,7 +278,6 @@ export const CategoriesManagement: React.FC = () => {
 
       showToast('info', t('categoryDeleted'), t('messageCategoryDeleted'), 4000);
       setDeleteConfirm({ show: false, categoryId: '', categoryName: '' });
-
       invalidateCache();
     } catch (error: any) {
       console.error('Error deleting category:', error);
@@ -291,11 +286,7 @@ export const CategoriesManagement: React.FC = () => {
   };
 
   const openDeleteConfirm = (category: Category) => {
-    setDeleteConfirm({
-      show: true,
-      categoryId: category.id,
-      categoryName: category.name
-    });
+    setDeleteConfirm({ show: true, categoryId: category.id, categoryName: category.name });
   };
 
   const toggleActive = async (categoryId: string) => {
@@ -338,59 +329,89 @@ export const CategoriesManagement: React.FC = () => {
     setFormData({ name: '', description: '', icon: '' });
   };
 
-  // ===== Reorder (optimizado) =====
-  // Swap de 2 categorías: 2 updates (en vez de actualizar todas)
-  const swapDisplayOrder = async (a: Category, b: Category) => {
-    const aOrder = a.display_order || 0;
-    const bOrder = b.display_order || 0;
-    if (aOrder === bOrder) return;
+  // ===== Reorder helpers (global order) =====
+  const persistDisplayOrders = async (updates: { id: string; display_order: number }[]) => {
+    // actualiza solo lo afectado
+    for (const u of updates) {
+      const { error } = await supabase
+        .from('categories')
+        .update({ display_order: u.display_order })
+        .eq('id', u.id);
 
+      if (error) throw error;
+    }
+  };
+
+  // Inserta dragged en la posición de target (global), recalculando SOLO el rango afectado
+  const reorderGlobalByInsert = async (draggedId: string, targetId: string, place: 'before' | 'after') => {
+    const sorted = [...categories].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const fromIndex = sorted.findIndex((c) => c.id === draggedId);
+    const toIndex = sorted.findIndex((c) => c.id === targetId);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    // Construir nuevo orden
+    const working = [...sorted];
+    const [dragged] = working.splice(fromIndex, 1);
+
+    const insertIndex = place === 'before'
+      ? (toIndex > fromIndex ? toIndex - 1 : toIndex)
+      : (toIndex > fromIndex ? toIndex : toIndex + 1);
+
+    working.splice(insertIndex, 0, dragged);
+
+    // Solo rango afectado
+    const start = Math.min(fromIndex, insertIndex);
+    const end = Math.max(fromIndex, insertIndex);
+
+    const affected = working.slice(start, end + 1);
+
+    // Tomar los display_order existentes del rango original, ordenados
+    const originalOrders = sorted
+      .slice(start, end + 1)
+      .map((c) => c.display_order || 0)
+      .sort((a, b) => a - b);
+
+    const updates = affected.map((c, i) => ({
+      id: c.id,
+      display_order: originalOrders[i]
+    }));
+
+    // Optimistic UI
     setCategories((prev) => {
-      const next = prev.map((c) => {
-        if (c.id === a.id) return { ...c, display_order: bOrder };
-        if (c.id === b.id) return { ...c, display_order: aOrder };
-        return c;
-      });
-      return next.sort((x, y) => (x.display_order || 0) - (y.display_order || 0));
+      const map = new Map(prev.map((c) => [c.id, { ...c }]));
+      for (const u of updates) {
+        const item = map.get(u.id);
+        if (item) item.display_order = u.display_order as any;
+      }
+      const next = Array.from(map.values()).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      saveCache(next);
+      return next;
     });
 
     try {
-      const { error: e1 } = await supabase.from('categories').update({ display_order: bOrder }).eq('id', a.id);
-      if (e1) throw e1;
-
-      const { error: e2 } = await supabase.from('categories').update({ display_order: aOrder }).eq('id', b.id);
-      if (e2) throw e2;
-
-      setCategories((prev) => {
-        saveCache(prev);
-        return prev;
-      });
-
+      await persistDisplayOrders(updates);
       invalidateCache();
-    } catch (error) {
-      console.error('Error swapping category order:', error);
+    } catch (err) {
+      console.error('Error persisting reorder:', err);
       showToast('error', 'Error', 'No se pudo reordenar las categorías');
       await loadCategories();
     }
   };
 
-  const moveCategory = async (categoryId: string, direction: 'up' | 'down') => {
-    // Solo reorder si NO hay búsqueda (igual que antes)
-    if (debouncedSearchTerm) return;
+  // Mover al inicio o final de la página actual (cuando no hay target específico)
+  const moveDraggedToPageEdge = async (edge: 'start' | 'end') => {
+    if (!draggedCategory) return;
 
-    // OJO: mover en el orden global (categories), no solo pagedCategories
-    const idx = categories.findIndex((c) => c.id === categoryId);
-    if (idx === -1) return;
+    // si no hay items en página, no hacemos nada
+    if (pagedCategories.length === 0) return;
 
-    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= categories.length) return;
-
-    await swapDisplayOrder(categories[idx], categories[targetIdx]);
+    const target = edge === 'start' ? pagedCategories[0] : pagedCategories[pagedCategories.length - 1];
+    await reorderGlobalByInsert(draggedCategory.id, target.id, edge === 'start' ? 'before' : 'after');
   };
 
-  // Drag & drop: solo dentro de la página visible (porque es lo que renderizas)
+  // ===== Drag and Drop (cross-page) =====
   const handleDragStart = (e: React.DragEvent, category: Category) => {
-    if (debouncedSearchTerm) return;
+    if (debouncedSearchTerm) return; // evita reorder mientras buscas
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -401,7 +422,7 @@ export const CategoriesManagement: React.FC = () => {
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = async (e: React.DragEvent, targetCategory: Category) => {
+  const handleDropOnItem = async (e: React.DragEvent, targetCategory: Category) => {
     e.preventDefault();
 
     if (!draggedCategory || draggedCategory.id === targetCategory.id) {
@@ -414,60 +435,42 @@ export const CategoriesManagement: React.FC = () => {
       return;
     }
 
-    // Para paginación: reordenamos solo dentro de la página actual
-    const pageIds = pagedCategories.map((c) => c.id);
-    if (!pageIds.includes(draggedCategory.id) || !pageIds.includes(targetCategory.id)) {
-      setDraggedCategory(null);
-      return;
-    }
-
-    const draggedIndex = categories.findIndex((c) => c.id === draggedCategory.id);
-    const targetIndex = categories.findIndex((c) => c.id === targetCategory.id);
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    const next = [...categories];
-    const [removed] = next.splice(draggedIndex, 1);
-    next.splice(targetIndex, 0, removed);
-
-    // Rango afectado dentro del array global
-    const start = Math.min(draggedIndex, targetIndex);
-    const end = Math.max(draggedIndex, targetIndex);
-    const affected = next.slice(start, end + 1);
-
-    const orders = categories
-      .slice(start, end + 1)
-      .map((c) => c.display_order || 0)
-      .sort((a, b) => a - b);
-
-    const updates = affected.map((c, i) => ({ id: c.id, display_order: orders[i] }));
-
-    const optimistic = next.map((c) => {
-      const u = updates.find((x) => x.id === c.id);
-      return u ? { ...c, display_order: u.display_order } : c;
-    });
-
-    setCategories(optimistic.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)));
+    // Insertar antes del target (puedes cambiar a after si lo prefieres)
+    await reorderGlobalByInsert(draggedCategory.id, targetCategory.id, 'before');
     setDraggedCategory(null);
-
-    try {
-      for (const u of updates) {
-        const { error } = await supabase.from('categories').update({ display_order: u.display_order }).eq('id', u.id);
-        if (error) throw error;
-      }
-      setCategories((prev) => {
-        saveCache(prev);
-        return prev;
-      });
-      invalidateCache();
-    } catch (error: any) {
-      console.error('Error reordering categories:', error);
-      showToast('error', 'Error', 'No se pudo reordenar las categorías');
-      await loadCategories();
-    }
   };
 
   const handleDragEnd = () => setDraggedCategory(null);
 
+  // Drop zones para mover a inicio/final de página actual
+  const handleDropOnPageStart = async (e: React.DragEvent) => {
+    e.preventDefault();
+    if (debouncedSearchTerm) return;
+    await moveDraggedToPageEdge('start');
+    setDraggedCategory(null);
+  };
+
+  const handleDropOnPageEnd = async (e: React.DragEvent) => {
+    e.preventDefault();
+    if (debouncedSearchTerm) return;
+    await moveDraggedToPageEdge('end');
+    setDraggedCategory(null);
+  };
+
+  // Cambiar página mientras arrastras (drag enter en botones)
+  const maybeTurnPageWhileDragging = (direction: 'prev' | 'next') => {
+    if (!draggedCategory) return;
+    const now = Date.now();
+    if (now - dragPagingCooldownRef.current < 450) return;
+    dragPagingCooldownRef.current = now;
+
+    setPage((p) => {
+      if (direction === 'prev') return Math.max(1, p - 1);
+      return Math.min(totalPages, p + 1);
+    });
+  };
+
+  // ===== UI =====
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -559,8 +562,7 @@ export const CategoriesManagement: React.FC = () => {
           <div className="mt-3 flex items-center gap-2 text-sm text-gray-600 bg-blue-50 rounded-lg p-3 border border-blue-100">
             <GripVertical className="w-4 h-4 text-blue-600 flex-shrink-0" />
             <p>
-              <strong className="text-blue-700">Tip: </strong>
-              {t('categoriesTip')}
+              <strong className="text-blue-700">Tip:</strong> Arrastra una categoría y, sin soltar, pasa por “Anterior/Siguiente” para cambiar de página. Suelta encima de una categoría (o en la franja superior/inferior) para colocarla.
             </p>
           </div>
         )}
@@ -580,7 +582,6 @@ export const CategoriesManagement: React.FC = () => {
           <p className="text-gray-600 mb-4">
             {categories.length === 0 ? t('createFirstCategory') : 'Try different search terms.'}
           </p>
-
           {categories.length === 0 && (
             <Button icon={Plus} onClick={() => setShowModal(true)}>
               {t('create')} {t('newCategory')}
@@ -589,14 +590,25 @@ export const CategoriesManagement: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* Drop zone: inicio de página */}
+          {!debouncedSearchTerm && draggedCategory && (
+            <div
+              onDragOver={handleDragOver}
+              onDrop={handleDropOnPageStart}
+              className="mb-3 rounded-lg border border-dashed border-blue-300 bg-blue-50 text-blue-700 text-sm px-4 py-2"
+            >
+              Suelta aquí para mover al inicio de esta página
+            </div>
+          )}
+
           <div className="space-y-3">
-            {pagedCategories.map((category, index) => (
+            {pagedCategories.map((category) => (
               <div
                 key={category.id}
                 draggable={!debouncedSearchTerm}
                 onDragStart={(e) => handleDragStart(e, category)}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, category)}
+                onDrop={(e) => handleDropOnItem(e, category)}
                 onDragEnd={handleDragEnd}
                 className={`bg-white rounded-lg shadow-sm border-2 transition-all ${
                   !debouncedSearchTerm ? 'cursor-move' : ''
@@ -640,28 +652,16 @@ export const CategoriesManagement: React.FC = () => {
 
                   <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end w-full md:w-auto mt-2 md:mt-0">
                     <button
-                      onClick={() => moveCategory(category.id, 'up')}
-                      disabled={index === 0 || !!debouncedSearchTerm}
-                      className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title={debouncedSearchTerm ? 'Clear search to reorder' : 'Move up'}
+                      onClick={() => handleEdit(category)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                     >
-                      <ArrowUp className="w-4 h-4 text-gray-600" />
-                    </button>
-
-                    <button
-                      onClick={() => moveCategory(category.id, 'down')}
-                      disabled={index === pagedCategories.length - 1 || !!debouncedSearchTerm}
-                      className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title={debouncedSearchTerm ? 'Clear search to reorder' : 'Move down'}
-                    >
-                      <ArrowDown className="w-4 h-4 text-gray-600" />
-                    </button>
-
-                    <button onClick={() => handleEdit(category)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                       <Pencil className="w-4 h-4 text-blue-600" />
                     </button>
 
-                    <button onClick={() => toggleActive(category.id)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <button
+                      onClick={() => toggleActive(category.id)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
                       {category.is_active ? (
                         <EyeOff className="w-4 h-4 text-orange-600" />
                       ) : (
@@ -669,7 +669,10 @@ export const CategoriesManagement: React.FC = () => {
                       )}
                     </button>
 
-                    <button onClick={() => openDeleteConfirm(category)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <button
+                      onClick={() => openDeleteConfirm(category)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </button>
                   </div>
@@ -678,7 +681,18 @@ export const CategoriesManagement: React.FC = () => {
             ))}
           </div>
 
-          {/* Pagination UI */}
+          {/* Drop zone: final de página */}
+          {!debouncedSearchTerm && draggedCategory && (
+            <div
+              onDragOver={handleDragOver}
+              onDrop={handleDropOnPageEnd}
+              className="mt-3 rounded-lg border border-dashed border-blue-300 bg-blue-50 text-blue-700 text-sm px-4 py-2"
+            >
+              Suelta aquí para mover al final de esta página
+            </div>
+          )}
+
+          {/* Pagination */}
           {filteredCategories.length > PAGE_SIZE && (
             <div className="flex items-center justify-between mt-6 bg-white p-3 rounded-lg shadow border">
               <div className="text-sm text-gray-600">
@@ -691,14 +705,17 @@ export const CategoriesManagement: React.FC = () => {
                   size="sm"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  onDragEnter={() => maybeTurnPageWhileDragging('prev')}
                 >
                   Anterior
                 </Button>
+
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  onDragEnter={() => maybeTurnPageWhileDragging('next')}
                 >
                   Siguiente
                 </Button>
@@ -711,7 +728,11 @@ export const CategoriesManagement: React.FC = () => {
       {/* Modal */}
       <Modal
         isOpen={showModal}
-        onClose={handleCloseModal}
+        onClose={() => {
+          setShowModal(false);
+          setEditingCategory(null);
+          setFormData({ name: '', description: '', icon: '' });
+        }}
         title={editingCategory ? `${t('edit')} ${t('category')}` : t('newCategory')}
         size="lg"
       >
@@ -756,7 +777,14 @@ export const CategoriesManagement: React.FC = () => {
           <div className="flex items-center justify-between gap-3 pt-4 border-t border-gray-200">
             <p className="text-xs text-gray-500">{t('catObligatry')}</p>
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={handleCloseModal}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingCategory(null);
+                  setFormData({ name: '', description: '', icon: '' });
+                }}
+              >
                 {t('cancel')}
               </Button>
               <Button onClick={handleSave} disabled={!formData.name.trim()}>
