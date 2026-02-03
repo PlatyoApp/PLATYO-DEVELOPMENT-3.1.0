@@ -434,6 +434,28 @@ export const RestaurantSettings: React.FC = () => {
       </div>
     );
   }
+  const selectedFeaturedIds = formData.settings.promo?.featured_product_ids || [];
+
+const productIdSet = useMemo(() => {
+  return new Set(products.map((p: any) => p.id));
+}, [products]);
+
+const validSelectedFeaturedIds = useMemo(() => {
+  return selectedFeaturedIds.filter((id: string) => productIdSet.has(id));
+}, [selectedFeaturedIds, productIdSet]);
+
+useEffect(() => {
+  if (validSelectedFeaturedIds.length !== selectedFeaturedIds.length) {
+    updateFormData('settings.promo.featured_product_ids', validSelectedFeaturedIds);
+  }
+}, [selectedFeaturedIds.length, validSelectedFeaturedIds.length, updateFormData]);
+
+/* y luego ya sigue tu return principal */
+return (
+  <div className="p-4 md:p-6">
+    ...
+  </div>
+);
 
   return (
     <div className="p-4 md:p-6">
