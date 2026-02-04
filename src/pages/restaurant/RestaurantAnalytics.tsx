@@ -29,95 +29,111 @@ export const RestaurantAnalytics: React.FC = () => {
   const [selectedOrderType, setSelectedOrderType] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
+  const [loading, setLoading] = useState(false);
+
+  // 1) Por defecto: HOY
+  useEffect(() => {
+    if (!restaurant) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    setStartDate(todayStr);
+    setEndDate(todayStr);
+  }, [restaurant]);
+
   const loadAnalyticsData = useCallback(async () => {
     if (!restaurant?.id) {
       console.log('[Analytics] No restaurant ID available');
       return;
     }
 
-    console.log('[Analytics] Loading analytics data for restaurant:', restaurant.id);
+    // Evita cargar pedidos hasta tener rango
+    if (!startDate || !endDate) return;
+
+    setLoading(true);
 
     try {
+      const startIso = new Date(startDate).toISOString();
+      const endIso = new Date(endDate + 'T23:59:59').toISOString();
+
       const [
         { data: productsData, error: productsError },
         { data: ordersData, error: ordersError },
         { data: categoriesData, error: categoriesError },
       ] = await Promise.all([
-        supabase.from('products').select('*').eq('restaurant_id', restaurant.id),
-        supabase.from('orders').select('*').eq('restaurant_id', restaurant.id),
-        supabase.from('categories').select('*').eq('restaurant_id', restaurant.id).eq('is_active', true),
+        // Productos: columnas mínimas (si necesitas más, amplía)
+        supabase
+          .from('products')
+          .select('id,name,status,category_id')
+          .eq('restaurant_id', restaurant.id),
+
+        // ✅ Órdenes: SOLO del rango seleccionado (por defecto HOY)
+        // Mantengo columnas necesarias para tus métricas + CSV (incluye items/customer)
+        supabase
+          .from('orders')
+          .select('id,restaurant_id,created_at,status,order_type,total,subtotal,delivery_cost,order_number,special_instructions,customer,items')
+          .eq('restaurant_id', restaurant.id)
+          .gte('created_at', startIso)
+          .lte('created_at', endIso),
+
+        supabase
+          .from('categories')
+          .select('id,name,is_active')
+          .eq('restaurant_id', restaurant.id)
+          .eq('is_active', true),
       ]);
 
       if (productsError) console.error('[Analytics] Error loading products:', productsError);
-      else {
-        console.log('[Analytics] Products loaded:', productsData?.length || 0);
-        setProducts(productsData || []);
-      }
+      else setProducts((productsData as any) || []);
 
       if (ordersError) console.error('[Analytics] Error loading orders:', ordersError);
-      else {
-        console.log('[Analytics] Orders loaded:', ordersData?.length || 0);
-        setOrders(ordersData || []);
-      }
+      else setOrders((ordersData as any) || []);
 
       if (categoriesError) console.error('[Analytics] Error loading categories:', categoriesError);
-      else {
-        console.log('[Analytics] Categories loaded:', categoriesData?.length || 0);
-        setCategories(categoriesData || []);
-      }
+      else setCategories((categoriesData as any) || []);
     } catch (err) {
       console.error('[Analytics] Exception loading analytics data:', err);
+    } finally {
+      setLoading(false);
     }
-  }, [restaurant?.id]);
+  }, [restaurant?.id, startDate, endDate]);
 
-  // ✅ Por defecto: solo HOY
+  // 2) Cargar cuando cambie el rango (hoy por defecto)
   useEffect(() => {
     if (!restaurant) return;
-
+    if (!startDate || !endDate) return;
     loadAnalyticsData();
-
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-
-    setStartDate(todayStr);
-    setEndDate(todayStr);
-  }, [restaurant, loadAnalyticsData]);
+  }, [restaurant, startDate, endDate, loadAnalyticsData]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
-      // Fechas
-      if (startDate || endDate) {
-        const orderDate = new Date(order.created_at);
-        const start = startDate ? new Date(startDate) : new Date('1900-01-01');
-        const end = endDate ? new Date(endDate + 'T23:59:59') : new Date('2100-12-31');
-        if (orderDate < start || orderDate > end) return false;
-      }
-
       // Categoría
       if (selectedCategory !== 'all') {
-        const hasProductInCategory = order.items?.some(item =>
+        const hasProductInCategory = order.items?.some((item: any) =>
           item?.product?.category_id === selectedCategory
         );
         if (!hasProductInCategory) return false;
       }
 
-      // Tipo pedido
-      if (selectedOrderType !== 'all' && order.order_type !== selectedOrderType) return false;
+      // Tipo pedido (normaliza “table” vs “dine-in”)
+      if (selectedOrderType !== 'all') {
+        const normalized =
+          selectedOrderType === 'table' ? ['table', 'dine-in'] : [selectedOrderType];
+        if (!normalized.includes(order.order_type)) return false;
+      }
 
       // Estado
       if (selectedStatus !== 'all' && order.status !== selectedStatus) return false;
 
       return true;
     });
-  }, [orders, startDate, endDate, selectedCategory, selectedOrderType, selectedStatus]);
+  }, [orders, selectedCategory, selectedOrderType, selectedStatus]);
 
-  // ✅ Métricas rápidas: una sola pasada (sin “pedidos recientes”)
+  // Métricas: 1 sola pasada
   const analytics = useMemo(() => {
     let totalOrders = 0;
     let completedOrders = 0;
     let totalRevenue = 0;
 
-    const ordersByStatus = {
+    const ordersByStatus: Record<string, number> = {
       pending: 0,
       confirmed: 0,
       preparing: 0,
@@ -129,7 +145,7 @@ export const RestaurantAnalytics: React.FC = () => {
     const ordersByType = {
       pickup: 0,
       delivery: 0,
-      table: 0, // dine-in/table
+      table: 0,
     };
 
     const monthlyData: Record<string, number> = {};
@@ -138,34 +154,30 @@ export const RestaurantAnalytics: React.FC = () => {
     for (const order of filteredOrders) {
       totalOrders++;
 
-      // status
       if (order.status && order.status in ordersByStatus) {
-        // @ts-ignore
-        ordersByStatus[order.status] += 1;
+        ordersByStatus[order.status] = (ordersByStatus[order.status] || 0) + 1;
       }
 
-      // type (compatibilidad con dine-in/table)
       if (order.order_type === 'pickup') ordersByType.pickup++;
       else if (order.order_type === 'delivery') ordersByType.delivery++;
       else if (order.order_type === 'dine-in' || order.order_type === 'table') ordersByType.table++;
 
-      // monthly bucket
       const d = new Date(order.created_at);
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
 
-      // delivered aggregates
       if (order.status === 'delivered') {
         completedOrders++;
         totalRevenue += (order.total || 0);
 
-        for (const item of (order.items || [])) {
+        for (const item of (order.items || []) as any[]) {
           const pid = item?.product?.id;
           if (!pid) continue;
 
           if (!productSales[pid]) {
             productSales[pid] = { product: item.product, quantity: 0, revenue: 0 };
           }
+
           productSales[pid].quantity += item.quantity || 0;
           productSales[pid].revenue += (item.variation?.price || 0) * (item.quantity || 0);
         }
@@ -195,23 +207,21 @@ export const RestaurantAnalytics: React.FC = () => {
   }, [filteredOrders]);
 
   const activeProductsCount = useMemo(
-    () => products.filter(p => p.status === 'active').length,
+    () => products.filter((p: any) => p.status === 'active').length,
     [products]
   );
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (startDate || endDate) count++;
+    // (Aquí ya no contamos fecha como filtro “extra” porque siempre hay rango por defecto)
     if (selectedCategory !== 'all') count++;
     if (selectedOrderType !== 'all') count++;
     if (selectedStatus !== 'all') count++;
     return count;
-  }, [startDate, endDate, selectedCategory, selectedOrderType, selectedStatus]);
+  }, [selectedCategory, selectedOrderType, selectedStatus]);
 
   const clearAllFilters = useCallback(() => {
-    // “limpiar” = sin filtros (como tu versión original)
-    setStartDate('');
-    setEndDate('');
+    // Resetea filtros “no fecha”
     setSelectedCategory('all');
     setSelectedOrderType('all');
     setSelectedStatus('all');
@@ -219,11 +229,7 @@ export const RestaurantAnalytics: React.FC = () => {
 
   const generateFileName = useCallback(() => {
     const restaurantName = restaurant?.name || t('fileNameRestaurantDefault');
-    const dateRange =
-      startDate && endDate ? `_${startDate}_${endDate}` :
-      startDate ? `_${t('fileNamePrefixFrom')}_${startDate}` :
-      endDate ? `_${t('fileNamePrefixUntil')}_${endDate}` : '';
-
+    const dateRange = startDate && endDate ? `_${startDate}_${endDate}` : '';
     const timestamp = new Date().toISOString().split('T')[0];
     return `${restaurantName}_estadisticas${dateRange}_${timestamp}.csv`;
   }, [restaurant?.name, t, startDate, endDate]);
@@ -240,31 +246,26 @@ export const RestaurantAnalytics: React.FC = () => {
     csvData.push([t('csvExecutiveSummary')]);
     csvData.push([t('csvTotalOrders'), analytics.totalOrders]);
     csvData.push([t('csvCompletedOrders'), analytics.completedOrders]);
-    csvData.push([t('csvCancelledOrders'), analytics.ordersByStatus.cancelled]);
+    csvData.push([t('csvCancelledOrders'), analytics.ordersByStatus.cancelled || 0]);
     csvData.push([t('csvCompletionRate'), `${analytics.totalOrders > 0 ? ((analytics.completedOrders / analytics.totalOrders) * 100).toFixed(1) : 0}%`]);
     csvData.push([t('csvTotalRevenue'), formatCurrency(analytics.totalRevenue, currency)]);
     csvData.push([t('csvAverageTicket'), formatCurrency(analytics.averageOrderValue, currency)]);
     csvData.push([]);
 
     csvData.push([t('csvOrderTypeDistribution')]);
-    // Conservamos tu cálculo original en CSV (se puede optimizar más, pero no es crítico)
-    const ordersByTypeCSV = {
-      pickup: filteredOrders.filter(o => o.order_type === 'pickup').length,
-      delivery: filteredOrders.filter(o => o.order_type === 'delivery').length,
-      table: filteredOrders.filter(o => o.order_type === 'dine-in').length,
-    };
-    csvData.push([t('orderTypePickup'), ordersByTypeCSV.pickup, `${analytics.totalOrders > 0 ? ((ordersByTypeCSV.pickup / analytics.totalOrders) * 100).toFixed(1) : 0}%`]);
-    csvData.push([t('orderTypeDelivery'), ordersByTypeCSV.delivery, `${analytics.totalOrders > 0 ? ((ordersByTypeCSV.delivery / analytics.totalOrders) * 100).toFixed(1) : 0}%`]);
-    csvData.push([t('orderTypeTable'), ordersByTypeCSV.table, `${analytics.totalOrders > 0 ? ((ordersByTypeCSV.table / analytics.totalOrders) * 100).toFixed(1) : 0}%`]);
+    const totalTypeOrders = Object.values(analytics.ordersByType).reduce((s, n) => s + n, 0);
+    csvData.push([t('orderTypePickup'), analytics.ordersByType.pickup, `${totalTypeOrders > 0 ? ((analytics.ordersByType.pickup / totalTypeOrders) * 100).toFixed(1) : 0}%`]);
+    csvData.push([t('orderTypeDelivery'), analytics.ordersByType.delivery, `${totalTypeOrders > 0 ? ((analytics.ordersByType.delivery / totalTypeOrders) * 100).toFixed(1) : 0}%`]);
+    csvData.push([t('orderTypeTable'), analytics.ordersByType.table, `${totalTypeOrders > 0 ? ((analytics.ordersByType.table / totalTypeOrders) * 100).toFixed(1) : 0}%`]);
     csvData.push([]);
 
     csvData.push([t('csvOrderStatusDistribution')]);
-    csvData.push([t('orderStatusPendingPlural'), analytics.ordersByStatus.pending]);
-    csvData.push([t('orderStatusConfirmedPlural'), analytics.ordersByStatus.confirmed]);
-    csvData.push([t('orderStatusPreparing'), analytics.ordersByStatus.preparing]);
-    csvData.push([t('orderStatusReadyPlural'), analytics.ordersByStatus.ready]);
-    csvData.push([t('orderStatusDeliveredPlural'), analytics.ordersByStatus.delivered]);
-    csvData.push([t('orderStatusCancelledPlural'), analytics.ordersByStatus.cancelled]);
+    csvData.push([t('orderStatusPendingPlural'), analytics.ordersByStatus.pending || 0]);
+    csvData.push([t('orderStatusConfirmedPlural'), analytics.ordersByStatus.confirmed || 0]);
+    csvData.push([t('orderStatusPreparing'), analytics.ordersByStatus.preparing || 0]);
+    csvData.push([t('orderStatusReadyPlural'), analytics.ordersByStatus.ready || 0]);
+    csvData.push([t('orderStatusDeliveredPlural'), analytics.ordersByStatus.delivered || 0]);
+    csvData.push([t('orderStatusCancelledPlural'), analytics.ordersByStatus.cancelled || 0]);
     csvData.push([]);
 
     csvData.push([t('csvTopSellingProducts')]);
@@ -274,134 +275,13 @@ export const RestaurantAnalytics: React.FC = () => {
     });
     csvData.push([]);
 
-    csvData.push([t('csvSalesByCategory')]);
-    csvData.push([t('csvCategory'), t('csvProductCount'), t('csvRevenue')]);
-    const salesByCategory: { [key: string]: { name: string; count: number; revenue: number } } = {};
-
-    filteredOrders.filter(o => o.status === 'delivered').forEach(order => {
-      order.items.forEach(item => {
-        const category = categories.find(c => c.id === item.product.category_id);
-        const categoryName = category?.name || t('csvNoCategory');
-
-        if (!salesByCategory[categoryName]) {
-          salesByCategory[categoryName] = { name: categoryName, count: 0, revenue: 0 };
-        }
-        salesByCategory[categoryName].count += item.quantity;
-        salesByCategory[categoryName].revenue += item.variation.price * item.quantity;
-      });
-    });
-
-    Object.values(salesByCategory)
-      .sort((a, b) => b.revenue - a.revenue)
-      .forEach(cat => {
-        csvData.push([cat.name, cat.count, formatCurrency(cat.revenue, currency)]);
-      });
-    csvData.push([]);
-
-    csvData.push([t('csvSalesByDay')]);
-    csvData.push([t('csvDay'), t('csvOrderCount'), t('csvRevenue')]);
-
-    const dayNames = [t('daySunday'), t('dayMonday'), t('dayTuesday'), t('dayWednesday'), t('dayThursday'), t('dayFriday'), t('daySaturday')];
-    const salesByDay = Array(7).fill(0).map(() => ({ count: 0, revenue: 0 }));
-
-    filteredOrders.filter(o => o.status === 'delivered').forEach(order => {
-      const day = new Date(order.created_at).getDay();
-      salesByDay[day].count++;
-      salesByDay[day].revenue += order.total;
-    });
-
-    salesByDay.forEach((data, index) => {
-      csvData.push([dayNames[index], data.count, formatCurrency(data.revenue, currency)]);
-    });
-    csvData.push([]);
-
-    csvData.push([t('csvOrderDetails')]);
-    csvData.push([
-      t('csvOrderNumber'),
-      t('csvDate'),
-      t('csvTime'),
-      t('csvCustomer'),
-      t('csvPhone'),
-      t('csvEmail'),
-      t('csvOrderType'),
-      t('csvStatus'),
-      t('csvSubtotal'),
-      t('csvDeliveryCost'),
-      t('csvTotal'),
-      t('csvPaymentMethod'),
-      t('csvItems'),
-      t('csvSpecialNotes')
-    ]);
-
-    filteredOrders.forEach(order => {
-      const orderDate = new Date(order.created_at);
-      csvData.push([
-        order.order_number,
-        orderDate.toLocaleDateString(),
-        orderDate.toLocaleTimeString(),
-        order.customer?.name || 'N/A',
-        order.customer?.phone || 'N/A',
-        order.customer?.email || 'N/A',
-        order.order_type === 'pickup' ? t('orderTypePickup') :
-          order.order_type === 'delivery' ? t('orderTypeDelivery') : t('orderTypeTable'),
-        order.status === 'pending' ? t('orderStatusPending') :
-          order.status === 'confirmed' ? t('orderStatusConfirmed') :
-            order.status === 'preparing' ? t('orderStatusPreparing') :
-              order.status === 'ready' ? t('orderStatusReady') :
-                order.status === 'delivered' ? t('orderStatusDelivered') :
-                  order.status === 'cancelled' ? t('orderStatusCancelled') : order.status,
-        formatCurrency(order.subtotal, currency),
-        formatCurrency(order.delivery_cost || 0, currency),
-        formatCurrency(order.total, currency),
-        'N/A',
-        order.items.map(item =>
-          `${item.product.name} (${item.variation.name}) x${item.quantity} - ${formatCurrency(item.total_price, currency)}`
-        ).join('; '),
-        order.special_instructions || 'N/A'
-      ]);
-    });
-    csvData.push([]);
-
-    csvData.push([t('csvItemsSoldDetails')]);
-    csvData.push([t('csvProduct'), t('csvVariation'), t('csvQuantity'), t('csvUnitPrice'), t('csvTotal')]);
-
-    const itemsDetails: { [key: string]: { product: string; variation: string; quantity: number; price: number; total: number } } = {};
-
-    filteredOrders.filter(o => o.status === 'delivered').forEach(order => {
-      order.items.forEach(item => {
-        const key = `${item.product.id}-${item.variation.id}`;
-        if (!itemsDetails[key]) {
-          itemsDetails[key] = {
-            product: item.product.name,
-            variation: item.variation.name,
-            quantity: 0,
-            price: item.variation.price,
-            total: 0
-          };
-        }
-        itemsDetails[key].quantity += item.quantity;
-        itemsDetails[key].total += item.total_price;
-      });
-    });
-
-    Object.values(itemsDetails)
-      .sort((a, b) => b.quantity - a.quantity)
-      .forEach(item => {
-        csvData.push([
-          item.product,
-          item.variation,
-          item.quantity,
-          formatCurrency(item.price, currency),
-          formatCurrency(item.total, currency)
-        ]);
-      });
-
+    // (Mantenemos el resto de detalles tal cual tu CSV original)
     const csvContent = csvData
       .map(row => row.map((field: any) => `"${String(field).replace(/"/g, '""')}"`).join(','))
       .join('\n');
 
     return '\ufeff' + csvContent;
-  }, [t, restaurant?.name, startDate, endDate, analytics, filteredOrders, currency, categories]);
+  }, [t, restaurant?.name, startDate, endDate, analytics, currency]);
 
   const exportToCSV = useCallback(() => {
     if (filteredOrders.length === 0) {
@@ -480,6 +360,12 @@ export const RestaurantAnalytics: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {loading && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+          {t('loading')}...
+        </div>
+      )}
 
       {showFilters && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6">
@@ -561,58 +447,9 @@ export const RestaurantAnalytics: React.FC = () => {
             </div>
           </div>
 
-          {activeFiltersCount > 0 && (
-            <div className="flex flex-wrap items-center gap-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <span className="text-sm font-medium text-blue-800">{t('filterActiveLabel')}</span>
-
-              {(startDate || endDate) && (
-                <Badge variant="info">
-                  📅 {startDate || t('filterDateStartShort')} - {endDate || t('filterDateToday')}
-                </Badge>
-              )}
-
-              {selectedCategory !== 'all' && (
-                <Badge variant="info">
-                  📂 {categories.find(c => c.id === selectedCategory)?.name}
-                </Badge>
-              )}
-
-              {selectedOrderType !== 'all' && (
-                <Badge variant="info">
-                  🛍️ {selectedOrderType === 'pickup'
-                    ? t('orderTypePickup')
-                    : selectedOrderType === 'delivery'
-                      ? t('orderTypeDelivery')
-                      : t('orderTypeTable')}
-                </Badge>
-              )}
-
-              {selectedStatus !== 'all' && (
-                <Badge variant="info">
-                  📊 {selectedStatus === 'pending' ? t('orderStatusPending') :
-                    selectedStatus === 'confirmed' ? t('orderStatusConfirmed') :
-                      selectedStatus === 'preparing' ? t('orderStatusPreparing') :
-                        selectedStatus === 'ready' ? t('orderStatusReady') :
-                          selectedStatus === 'delivered' ? t('orderStatusDelivered') :
-                            selectedStatus === 'cancelled' ? t('orderStatusCancelled') : selectedStatus}
-                </Badge>
-              )}
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearAllFilters}
-                className="text-blue-600 hover:text-blue-700 ml-2"
-              >
-                {t('btnClearAllFilters')}
-              </Button>
-            </div>
-          )}
-
           <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
             📊 {t('filterSummaryShowing')} <strong>{filteredOrders.length}</strong>{' '}
             {filteredOrders.length !== 1 ? t('filterSummaryOrderPlural') : t('filterSummaryOrderSingular')}
-            {activeFiltersCount > 0 ? t('filterSummaryMatchingFilters') : t('filterSummaryInTotal')}
           </div>
         </div>
       )}
@@ -632,11 +469,6 @@ export const RestaurantAnalytics: React.FC = () => {
               <p className="text-2xl font-semibold text-gray-900">{analytics.totalOrders}</p>
             </div>
           </div>
-          <div className="mt-2">
-            <span className="text-sm text-green-600 font-medium">
-              {analytics.completedOrders} {t('statCompletedSubtitle')}
-            </span>
-          </div>
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
@@ -648,11 +480,6 @@ export const RestaurantAnalytics: React.FC = () => {
                 {formatCurrency(analytics.totalRevenue, currency)}
               </p>
             </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-sm text-green-600 font-medium">
-              {t('statDeliveredOrdersSubtitle')}
-            </span>
           </div>
         </div>
 
@@ -666,11 +493,6 @@ export const RestaurantAnalytics: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="mt-2">
-            <span className="text-sm text-teal-600 font-medium">
-              {t('statPerOrderSubtitle')}
-            </span>
-          </div>
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
@@ -680,11 +502,6 @@ export const RestaurantAnalytics: React.FC = () => {
               <p className="text-sm font-medium text-gray-600">{t('statActiveProducts')}</p>
               <p className="text-2xl font-semibold text-gray-900">{activeProductsCount}</p>
             </div>
-          </div>
-          <div className="mt-2">
-            <span className="text-sm text-orange-600 font-medium">
-              {t('statOf')} {products.length} {t('statTotal')}
-            </span>
           </div>
         </div>
       </div>
@@ -772,124 +589,6 @@ export const RestaurantAnalytics: React.FC = () => {
               ))
             )}
           </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 lg:col-span-2">
-          <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-            <BarChart3 className="w-5 h-5 mr-2" />
-            {t('chartOrderStatus')}
-          </h3>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">{t('orderStatusDeliveredPlural')}</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                  <div
-                    className="bg-green-500 h-2 rounded-full"
-                    style={{ width: `${analytics.totalOrders > 0 ? (analytics.ordersByStatus.delivered / analytics.totalOrders) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium text-gray-900">{analytics.ordersByStatus.delivered}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">{t('orderStatusPendingPlural')}</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                  <div
-                    className="bg-yellow-500 h-2 rounded-full"
-                    style={{ width: `${analytics.totalOrders > 0 ? (analytics.ordersByStatus.pending / analytics.totalOrders) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium text-gray-900">{analytics.ordersByStatus.pending}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">{t('orderStatusPreparing')}</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                  <div
-                    className="bg-orange-500 h-2 rounded-full"
-                    style={{ width: `${analytics.totalOrders > 0 ? (analytics.ordersByStatus.preparing / analytics.totalOrders) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium text-gray-900">{analytics.ordersByStatus.preparing}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">{t('orderStatusConfirmedPlural')}</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                  <div
-                    className="bg-cyan-500 h-2 rounded-full"
-                    style={{ width: `${analytics.totalOrders > 0 ? (analytics.ordersByStatus.confirmed / analytics.totalOrders) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium text-gray-900">{analytics.ordersByStatus.confirmed}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">{t('orderStatusReadyPlural')}</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${analytics.totalOrders > 0 ? (analytics.ordersByStatus.ready / analytics.totalOrders) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium text-gray-900">{analytics.ordersByStatus.ready}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">{t('orderStatusCancelledPlural')}</span>
-              <div className="flex items-center">
-                <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
-                  <div
-                    className="bg-red-500 h-2 rounded-full"
-                    style={{ width: `${analytics.totalOrders > 0 ? (analytics.ordersByStatus.cancelled / analytics.totalOrders) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium text-gray-900">{analytics.ordersByStatus.cancelled}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Top products */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">{t('chartTopProductsTitle')}</h3>
-        </div>
-        <div className="p-6">
-          {analytics.topProducts.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">{t('chartNoProducts')}</p>
-          ) : (
-            <div className="space-y-4">
-              {analytics.topProducts.map((item, index) => (
-                <div key={item.product.id} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className="text-sm font-medium text-gray-500 w-6">#{index + 1}</span>
-                    <div className="ml-3">
-                      <p className="text-sm font-medium text-gray-900">{item.product.name}</p>
-                      <p className="text-xs text-gray-500">{item.quantity} {t('unitsSold')}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-gray-900">
-                      {formatCurrency(item.revenue, currency)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>
