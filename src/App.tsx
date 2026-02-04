@@ -35,13 +35,15 @@ const SubscriptionExpiredScreen: React.FC<{ restaurantName?: string }> = ({ rest
       <p className="text-gray-600 mb-2">
         {restaurantName ? (
           <>
-            El restaurante <strong>{restaurantName}</strong> tiene la suscripción vencida.
+            El restaurante <strong>{restaurantName}</strong> tiene la suscripción vencida o inactiva.
           </>
         ) : (
           <>Este restaurante tiene la suscripción vencida o inactiva</>
         )}
       </p>
+      <>
       <p className="text-gray-600">Por favor contacta con soporte para renovarla.</p>
+      </>
       <p className="text-gray-600">www.platyo.com</p>
     </div>
   </div>
