@@ -35,34 +35,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t } = useLanguage();
 
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
-  const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
 
     const loadSubscription = async () => {
-      // Superadmin: acceso total
       if (user?.role === 'superadmin') {
-        if (!cancelled) {
-          setCurrentSubscription({} as any);
-          setSubscriptionLoaded(true);
-        }
+        if (!alive) return;
+        setCurrentSubscription({} as any);
+        setLoadingSubscription(false);
         return;
       }
 
-      // Si aún no hay restaurant, no consultes
       if (!restaurant?.id) {
-        if (!cancelled) {
-          setCurrentSubscription(null);
-          setSubscriptionLoaded(false);
-        }
+        if (!alive) return;
+        setCurrentSubscription(null);
+        setLoadingSubscription(false);
         return;
       }
+
+      setLoadingSubscription(true);
 
       try {
-        // Importante: marcamos como "cargando" cada vez que cambia el restaurante
-        if (!cancelled) setSubscriptionLoaded(false);
-
         const { data, error } = await supabase
           .from('subscriptions')
           .select('id, restaurant_id, status, plan_name, created_at')
@@ -72,48 +67,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
           .limit(1)
           .maybeSingle();
 
-        if (error) {
-          console.error('[Sidebar] Subscription query error:', error);
-        } else {
-          console.log('[Sidebar] Subscription loaded:', data);
-        }
+        if (!alive) return;
 
-        if (!cancelled) {
-          setCurrentSubscription(data ?? null);
-          setSubscriptionLoaded(true);
-        }
-      } catch (e) {
-        console.error('[Sidebar] Subscription query exception:', e);
-        if (!cancelled) {
+        if (error) {
+          console.error('[Sidebar] Error loading subscription:', error);
           setCurrentSubscription(null);
-          setSubscriptionLoaded(true);
+        } else {
+          setCurrentSubscription(data ?? null);
         }
+      } finally {
+        if (alive) setLoadingSubscription(false);
       }
     };
 
     loadSubscription();
 
     return () => {
-      cancelled = true;
+      alive = false;
     };
   }, [user?.role, restaurant?.id]);
 
+  const planNameNorm = useMemo(() => {
+    // FREE / Basic / Pro / Business
+    return String((currentSubscription as any)?.plan_name ?? '').trim().toLowerCase();
+  }, [currentSubscription]);
+
+  /**
+   * Regla:
+   * - superadmin: true
+   * - mientras carga: true (para que la pestaña exista desde el inicio)
+   * - cuando carga: depende de plan != free
+   */
   const hasAnalyticsAccess = useMemo(() => {
     if (user?.role === 'superadmin') return true;
 
-    // Mientras se está cargando la suscripción, permitir acceso
-    // Se reevaluará cuando termine de cargar
-    if (!subscriptionLoaded) return true;
+    // Este es el cambio clave:
+    if (loadingSubscription) return true;
 
-    // Si ya cargó y no hay suscripción activa => no acceso
     if (!currentSubscription) return false;
 
-    const planName = String((currentSubscription as any).plan_name ?? '').trim().toLowerCase();
-
-    // Tu BD guarda FREE/Basic/Pro/Business. Normalizamos.
-    // Regla: solo FREE no tiene analytics.
-    return planName !== 'free';
-  }, [user?.role, currentSubscription, subscriptionLoaded]);
+    return planNameNorm !== 'free';
+  }, [user?.role, loadingSubscription, currentSubscription, planNameNorm]);
 
   const superAdminTabs = useMemo(
     () => [
@@ -128,7 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   const restaurantTabs = useMemo(() => {
-    const base = [
+    const base: Array<{ id: string; name: string; icon: any; disabled?: boolean }> = [
       { id: 'dashboard', name: t('dashboard'), icon: Home },
       { id: 'categories', name: t('categories'), icon: FolderOpen },
       { id: 'menu', name: t('menu'), icon: Menu },
@@ -138,14 +132,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'settings', name: t('settings'), icon: Settings }
     ];
 
-    // Si quieres que aparezca INMEDIATO pero deshabilitada mientras carga,
-    // dime y lo ajusto. Por ahora, la añadimos solo si hay acceso.
     if (hasAnalyticsAccess) {
-      base.push({ id: 'analytics', name: t('analytics'), icon: BarChart3 });
+      base.push({
+        id: 'analytics',
+        name: t('analytics'),
+        icon: BarChart3,
+        // Opcional: mientras carga, la mostramos deshabilitada para evitar entrar antes de tiempo
+        disabled: loadingSubscription
+      });
     }
 
     return base;
-  }, [t, hasAnalyticsAccess]);
+  }, [t, hasAnalyticsAccess, loadingSubscription]);
 
   const tabs = user?.role === 'superadmin' ? superAdminTabs : restaurantTabs;
 
@@ -171,35 +169,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <ul className="space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                const isDisabled = Boolean((tab as any).disabled);
+
                 return (
                   <li key={tab.id}>
                     <button
+                      disabled={isDisabled}
                       onClick={() => {
+                        if (isDisabled) return;
                         onTabChange(tab.id);
                         onClose();
                       }}
                       className={`
                         w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
                         ${
-                          activeTab === tab.id
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                          isDisabled
+                            ? 'opacity-50 cursor-not-allowed text-gray-500'
+                            : isActive
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                         }
                       `}
                     >
                       <Icon className="w-5 h-5 mr-3" />
                       {tab.name}
+                      {tab.id === 'analytics' && loadingSubscription && (
+                        <span className="ml-auto text-[10px] text-gray-500">...</span>
+                      )}
                     </button>
                   </li>
                 );
               })}
             </ul>
-
-            {subscriptionLoaded && (
-            <div className="mt-4 p-2 text-xs text-gray-500 bg-gray-100 rounded">
-              Plan: {String((currentSubscription as any)?.plan_name ?? 'FREE')} | Analytics: {String(hasAnalyticsAccess)}
-            </div>
-            )}
           </div>
         </nav>
       </aside>
