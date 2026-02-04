@@ -240,7 +240,7 @@ export const SuperAdminAnalytics: React.FC = () => {
       return sum + monthlyPrice;
     }, 0);
 
-    return (totalValue / paidSubs.length);
+    return (totalValue / paidSubs.length).toFixed(2);
   };
 
   const exportToCSV = () => {
@@ -261,10 +261,10 @@ export const SuperAdminAnalytics: React.FC = () => {
     csvData.push([]);
 
     csvData.push(['MÉTRICAS FINANCIERAS']);
-    csvData.push(['MRR (Ingreso Recurrente Mensual)', `$${mrr}`]);
-    csvData.push(['ARR (Ingreso Recurrente Anual)', `$${arr}`]);
-    csvData.push(['Ingresos Totales Activos', `$${totalRevenue}`]);
-    csvData.push(['Potencial de Ingresos', `$${potentialRevenue}`]);
+    csvData.push(['MRR (Ingreso Recurrente Mensual)', `$${mrr.toFixed(2)}`]);
+    csvData.push(['ARR (Ingreso Recurrente Anual)', `$${arr.toFixed(2)}`]);
+    csvData.push(['Ingresos Totales Activos', `$${totalRevenue.toFixed(2)}`]);
+    csvData.push(['Potencial de Ingresos', `$${potentialRevenue.toFixed(2)}`]);
     csvData.push(['Valor Promedio por Plan', `$${calculateAveragePlanValue()}`]);
     csvData.push([]);
 
@@ -277,10 +277,10 @@ export const SuperAdminAnalytics: React.FC = () => {
     csvData.push([]);
 
     csvData.push(['DISTRIBUCIÓN POR PLAN']);
-    csvData.push(['Plan FREE', planDistribution.free, `$${revenueByPlan.free}`]);
-    csvData.push(['Plan Basic', planDistribution.basic, `$${revenueByPlan.basic}`]);
-    csvData.push(['Plan Pro', planDistribution.pro, `$${revenueByPlan.pro}`]);
-    csvData.push(['Plan Business', planDistribution.business, `$${revenueByPlan.business}`]);
+    csvData.push(['Plan FREE', planDistribution.free, `$${revenueByPlan.free.toFixed(2)}`]);
+    csvData.push(['Plan Basic', planDistribution.basic, `$${revenueByPlan.basic.toFixed(2)}`]);
+    csvData.push(['Plan Pro', planDistribution.pro, `$${revenueByPlan.pro.toFixed(2)}`]);
+    csvData.push(['Plan Business', planDistribution.business, `$${revenueByPlan.business.toFixed(2)}`]);
     csvData.push([]);
 
     csvData.push(['DISTRIBUCIÓN POR DURACIÓN']);
@@ -438,7 +438,7 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="bg-white p-4 rounded-lg border border-green-200">
             <p className="text-sm font-medium text-gray-600">MRR</p>
             <p className="text-3xl font-bold text-blue-600 mt-2">
-              ${mrr}
+              ${mrr.toFixed(2)}
             </p>
             <p className="text-xs text-gray-500 mt-1">Ingreso Recurrente Mensual</p>
           </div>
@@ -446,7 +446,7 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="bg-white p-4 rounded-lg border border-green-200">
             <p className="text-sm font-medium text-gray-600">ARR</p>
             <p className="text-3xl font-bold text-purple-600 mt-2">
-              ${arr}
+              ${arr.toFixed(2)}
             </p>
             <p className="text-xs text-gray-500 mt-1">Ingreso Recurrente Anual</p>
           </div>
@@ -454,7 +454,7 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="bg-white p-4 rounded-lg border border-green-200">
             <p className="text-sm font-medium text-gray-600">Ingresos Totales</p>
             <p className="text-3xl font-bold text-green-600 mt-2">
-              ${totalRevenue}
+              ${totalRevenue.toFixed(2)}
             </p>
             <p className="text-xs text-gray-500 mt-1">Suscripciones activas</p>
           </div>
@@ -462,7 +462,7 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="bg-white p-4 rounded-lg border border-green-200">
             <p className="text-sm font-medium text-gray-600">Valor Promedio</p>
             <p className="text-3xl font-bold text-orange-600 mt-2">
-              ${calculateAveragePlanValue().toFixed(2)}
+              ${calculateAveragePlanValue()}
             </p>
             <p className="text-xs text-gray-500 mt-1">Por suscripción de pago</p>
           </div>
@@ -473,22 +473,22 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="text-center p-3 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-600 mb-1">Gratis</p>
-              <p className="text-lg font-bold text-gray-900">${revenueByPlan.free}</p>
+              <p className="text-lg font-bold text-gray-900">${revenueByPlan.free.toFixed(2)}</p>
               <p className="text-xs text-gray-500 mt-1">{planDistribution.free} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-600 mb-1">Basic</p>
-              <p className="text-lg font-bold text-blue-900">${revenueByPlan.basic}</p>
-              <p className="text-xs text-blue-600 mt-1">{planDistributiVon.basic} suscripciones</p>
+              <p className="text-lg font-bold text-blue-900">${revenueByPlan.basic.toFixed(2)}</p>
+              <p className="text-xs text-blue-600 mt-1">{planDistribution.basic} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-purple-50 rounded-lg">
               <p className="text-xs text-purple-600 mb-1">Pro</p>
-              <p className="text-lg font-bold text-purple-900">${revenueByPlan.pro}</p>
+              <p className="text-lg font-bold text-purple-900">${revenueByPlan.pro.toFixed(2)}</p>
               <p className="text-xs text-purple-600 mt-1">{planDistribution.pro} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-orange-50 rounded-lg">
               <p className="text-xs text-orange-600 mb-1">Business</p>
-              <p className="text-lg font-bold text-orange-900">${revenueByPlan.business}</p>
+              <p className="text-lg font-bold text-orange-900">${revenueByPlan.business.toFixed(2)}</p>
               <p className="text-xs text-orange-600 mt-1">{planDistribution.business} suscripciones</p>
             </div>
           </div>
@@ -714,7 +714,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="info">{planDistribution.basic} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-blue-600">
-                  Ingreso: ${(planDistribution.basic * getPlanPrice('basic'))}/mes
+                  Ingreso: ${(planDistribution.basic * getPlanPrice('basic')).toFixed(2)}/mes
                 </div>
               </div>
 
@@ -724,7 +724,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="success">{planDistribution.pro} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-green-600">
-                  Ingreso: ${(planDistribution.pro * getPlanPrice('pro'))}/mes
+                  Ingreso: ${(planDistribution.pro * getPlanPrice('pro')).toFixed(2)}/mes
                 </div>
               </div>
 
@@ -734,7 +734,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="warning">{planDistribution.business} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-orange-600">
-                  Ingreso: ${(planDistribution.business * getPlanPrice('business'))}/mes
+                  Ingreso: ${(planDistribution.business * getPlanPrice('business')).toFixed(2)}/mes
                 </div>
               </div>
             </div>
