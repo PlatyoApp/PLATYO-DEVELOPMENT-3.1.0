@@ -29,20 +29,43 @@ const FullPageLoader: React.FC<{ text?: string }> = ({ text = 'Cargando...' }) =
 );
 
 const SubscriptionExpiredScreen: React.FC<{ restaurantName?: string }> = ({ restaurantName }) => (
-  <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-    <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4">Suscripción vencida</h2>
-      <p className="text-gray-600 mb-2">
+  <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center p-4">
+    <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center border border-gray-100">
+      <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
+        {/* Si ya tienes un icono importado (ej. AlertTriangle), úsalo aquí */}
+        <span className="text-red-600 text-2xl font-bold">!</span>
+      </div>
+
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">Suscripción vencida</h2>
+      <p className="text-gray-600 mb-5 leading-relaxed">
         {restaurantName ? (
           <>
-            El restaurante <strong>{restaurantName}</strong> tiene la suscripción vencida o inactiva.
+            El restaurante <strong className="text-gray-900">{restaurantName}</strong> tiene la suscripción vencida o
+            inactiva.
           </>
         ) : (
-          <>Este restaurante tiene la suscripción vencida o inactiva</>
+          <>Este restaurante tiene la suscripción vencida o inactiva.</>
         )}
       </p>
-      <p className="text-gray-600">Por favor contacta con soporte para renovarla.</p>
-      <p className="text-gray-600">www.platyo.com</p>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 text-left">
+        <p className="text-sm text-gray-700">
+          Para volver a activar el menú público, por favor contacta con soporte y solicita la renovación.
+        </p>
+      </div>
+
+      <a
+        href="https://www.platyo.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center justify-center w-full rounded-xl bg-blue-600 text-white font-medium py-3 hover:bg-blue-700 transition-colors"
+      >
+        Ir a platyo.com
+      </a>
+
+      <p className="text-xs text-gray-400 mt-4">
+        Si crees que esto es un error, intenta nuevamente en unos minutos.
+      </p>
     </div>
   </div>
 );
