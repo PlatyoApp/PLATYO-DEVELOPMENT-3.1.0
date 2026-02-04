@@ -25,6 +25,16 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+/**
+ * Caché en memoria (por sesión de SPA)
+ * - Evita reconsultar suscripción en cada montaje del Sidebar
+ */
+type SubCacheEntry = { ts: number; sub: Subscription | null };
+const subscriptionCache = new Map<string, SubCacheEntry>();
+
+// Ajusta TTL si quieres (ej. 5 min)
+const SUB_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
@@ -34,86 +44,119 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { user, restaurant } = useAuth();
   const { t } = useLanguage();
 
-  const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
-  const [subscriptionLoaded, setSubscriptionLoaded] = useState(false);
+  const restaurantId = restaurant?.id ? String(restaurant.id) : null;
+
+  // Un solo estado para carga (evita 2 setState por ciclo)
+  const [subState, setSubState] = useState<{
+    status: 'idle' | 'loading' | 'ready' | 'error';
+    sub: Subscription | null;
+  }>({ status: 'idle', sub: null });
 
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
 
     const loadSubscription = async () => {
-      // Superadmin: acceso total
+      // Superadmin: no necesitas consultar nada
       if (user?.role === 'superadmin') {
-        if (!cancelled) {
-          setCurrentSubscription({} as any);
-          setSubscriptionLoaded(true);
-        }
+        if (!alive) return;
+        setSubState({ status: 'ready', sub: {} as any });
         return;
       }
 
-      // Si aún no hay restaurant, no consultes
-      if (!restaurant?.id) {
-        if (!cancelled) {
-          setCurrentSubscription(null);
-          setSubscriptionLoaded(false);
-        }
+      if (!restaurantId) {
+        if (!alive) return;
+        setSubState({ status: 'idle', sub: null });
         return;
       }
+
+      // 1) Intenta caché en memoria
+      const cached = subscriptionCache.get(restaurantId);
+      const now = Date.now();
+      if (cached && now - cached.ts < SUB_CACHE_TTL_MS) {
+        if (!alive) return;
+        setSubState({ status: 'ready', sub: cached.sub });
+        return;
+      }
+
+      // 2) (Opcional) cache en sessionStorage para recargas suaves
+      try {
+        const key = `sub-cache:${restaurantId}`;
+        const raw = sessionStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw) as SubCacheEntry;
+          if (parsed?.ts && now - parsed.ts < SUB_CACHE_TTL_MS) {
+            subscriptionCache.set(restaurantId, parsed);
+            if (!alive) return;
+            setSubState({ status: 'ready', sub: parsed.sub });
+            return;
+          }
+        }
+      } catch {
+        // ignorar errores de storage
+      }
+
+      // 3) Si no hay cache, consulta
+      if (!alive) return;
+      setSubState((s) => ({ ...s, status: 'loading' }));
 
       try {
-        // Importante: marcamos como "cargando" cada vez que cambia el restaurante
-        if (!cancelled) setSubscriptionLoaded(false);
-
         const { data, error } = await supabase
           .from('subscriptions')
           .select('id, restaurant_id, status, plan_name, created_at')
-          .eq('restaurant_id', restaurant.id)
+          .eq('restaurant_id', restaurantId)
           .eq('status', 'active')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
+        if (!alive) return;
+
         if (error) {
           console.error('[Sidebar] Subscription query error:', error);
-        } else {
-          console.log('[Sidebar] Subscription loaded:', data);
+          setSubState({ status: 'error', sub: null });
+          return;
         }
 
-        if (!cancelled) {
-          setCurrentSubscription(data ?? null);
-          setSubscriptionLoaded(true);
+        const sub = (data ?? null) as Subscription | null;
+
+        // Guardar cache
+        const entry: SubCacheEntry = { ts: now, sub };
+        subscriptionCache.set(restaurantId, entry);
+        try {
+          sessionStorage.setItem(`sub-cache:${restaurantId}`, JSON.stringify(entry));
+        } catch {
+          // ignore
         }
+
+        setSubState({ status: 'ready', sub });
       } catch (e) {
         console.error('[Sidebar] Subscription query exception:', e);
-        if (!cancelled) {
-          setCurrentSubscription(null);
-          setSubscriptionLoaded(true);
-        }
+        if (!alive) return;
+        setSubState({ status: 'error', sub: null });
       }
     };
 
     loadSubscription();
-
     return () => {
-      cancelled = true;
+      alive = false;
     };
-  }, [user?.role, restaurant?.id]);
+  }, [user?.role, restaurantId]);
 
+  /**
+   * Mantienes tu comportamiento:
+   * - Mientras carga: permitir (para que la pestaña aparezca rápido)
+   * - Luego: depende del plan
+   */
   const hasAnalyticsAccess = useMemo(() => {
     if (user?.role === 'superadmin') return true;
 
-    // Mientras se está cargando la suscripción, permitir acceso
-    // Se reevaluará cuando termine de cargar
-    if (!subscriptionLoaded) return true;
+    if (subState.status === 'loading' || subState.status === 'idle') return true;
 
-    // Si ya cargó y no hay suscripción activa => no acceso
-    if (!currentSubscription) return false;
+    if (!subState.sub) return false;
 
-    const planName = String((currentSubscription as any).plan_name ?? '').trim().toLowerCase();
-
-    // Tu BD guarda FREE/Basic/Pro/Business. Normalizamos.
-    // Regla: solo FREE no tiene analytics.
+    const planName = String((subState.sub as any).plan_name ?? '').trim().toLowerCase();
     return planName !== 'free';
-  }, [user?.role, currentSubscription, subscriptionLoaded]);
+  }, [user?.role, subState.status, subState.sub]);
 
   const superAdminTabs = useMemo(
     () => [
@@ -138,8 +181,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'settings', name: t('settings'), icon: Settings }
     ];
 
-    // Si quieres que aparezca INMEDIATO pero deshabilitada mientras carga,
-    // dime y lo ajusto. Por ahora, la añadimos solo si hay acceso.
     if (hasAnalyticsAccess) {
       base.push({ id: 'analytics', name: t('analytics'), icon: BarChart3 });
     }
@@ -171,6 +212,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <ul className="space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+
                 return (
                   <li key={tab.id}>
                     <button
@@ -180,11 +223,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       className={`
                         w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                        ${
-                          activeTab === tab.id
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                        }
+                        ${isActive
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}
                       `}
                     >
                       <Icon className="w-5 h-5 mr-3" />
@@ -194,7 +235,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
               })}
             </ul>
-
           </div>
         </nav>
       </aside>
