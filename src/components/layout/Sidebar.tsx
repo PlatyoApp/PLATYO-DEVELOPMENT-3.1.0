@@ -83,6 +83,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <nav className="mt-8">
           <div className="px-4">
+            <div className="mb-4 p-2 bg-blue-100 rounded text-xs text-blue-700">
+              Role: {user?.role} | Tabs: {tabs.length}
+            </div>
             <ul className="space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
