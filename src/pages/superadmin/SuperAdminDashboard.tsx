@@ -234,7 +234,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <p className="text-3xl font-bold text-slate-900 mb-3">{stats.basicPlan}</p>
           <div className="pt-3 border-t border-slate-100">
             <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded">
-              $15/mes
+              $49.900/mes
             </span>
           </div>
         </div>
@@ -249,7 +249,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <p className="text-3xl font-bold text-slate-900 mb-3">{stats.proPlan}</p>
           <div className="pt-3 border-t border-slate-100">
             <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2 py-1 rounded">
-              $35/mes
+              $99.900/mes
             </span>
           </div>
         </div>
@@ -264,7 +264,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <p className="text-3xl font-bold text-slate-900 mb-3">{stats.businessPlan}</p>
           <div className="pt-3 border-t border-slate-100">
             <span className="text-xs text-amber-600 font-semibold bg-amber-50 px-2 py-1 rounded">
-              $75/mes
+              $199.900/mes
             </span>
           </div>
         </div>
