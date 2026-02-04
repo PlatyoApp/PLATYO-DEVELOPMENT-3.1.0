@@ -25,15 +25,66 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-/**
- * Caché en memoria (por sesión de SPA)
- * - Evita reconsultar suscripción en cada montaje del Sidebar
- */
-type SubCacheEntry = { ts: number; sub: Subscription | null };
-const subscriptionCache = new Map<string, SubCacheEntry>();
+/** ======= Caché + dedupe (módulo global) ======= */
+type CacheEntry = { ts: number; sub: Subscription | null };
+const subCache = new Map<string, CacheEntry>();
+const inFlight = new Map<string, Promise<Subscription | null>>();
 
-// Ajusta TTL si quieres (ej. 5 min)
-const SUB_CACHE_TTL_MS = 5 * 60 * 1000;
+const TTL_MS = 10 * 60 * 1000; // 10 min (ajusta)
+
+function sessionKey(restaurantId: string) {
+  return `sub-cache:v1:${restaurantId}`;
+}
+
+function readSession(restaurantId: string): CacheEntry | null {
+  try {
+    const raw = sessionStorage.getItem(sessionKey(restaurantId));
+    if (!raw) return null;
+    return JSON.parse(raw) as CacheEntry;
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(restaurantId: string, entry: CacheEntry) {
+  try {
+    sessionStorage.setItem(sessionKey(restaurantId), JSON.stringify(entry));
+  } catch {
+    // ignore
+  }
+}
+
+async function fetchSubscriptionOnce(restaurantId: string): Promise<Subscription | null> {
+  // dedupe: si ya hay una petición en vuelo, reutilízala
+  const existing = inFlight.get(restaurantId);
+  if (existing) return existing;
+
+  const p = (async () => {
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('id, restaurant_id, status, plan_name, created_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      // importante: no spamear logs; deja solo error real
+      console.error('[Sidebar] Subscription query error:', error);
+      return null;
+    }
+    return (data ?? null) as Subscription | null;
+  })();
+
+  inFlight.set(restaurantId, p);
+
+  try {
+    return await p;
+  } finally {
+    inFlight.delete(restaurantId);
+  }
+}
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
@@ -46,118 +97,79 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const restaurantId = restaurant?.id ? String(restaurant.id) : null;
 
-  // Un solo estado para carga (evita 2 setState por ciclo)
-  const [subState, setSubState] = useState<{
-    status: 'idle' | 'loading' | 'ready' | 'error';
-    sub: Subscription | null;
-  }>({ status: 'idle', sub: null });
+  // Estado mínimo: sub + loading (sin “loaded” extra)
+  const [sub, setSub] = useState<Subscription | null>(null);
+  const [loadingSub, setLoadingSub] = useState(false);
 
+  // 1) Render instantáneo: NO dependemos de sub para construir tabs (si quieres)
+  //    Si quieres condicionar analytics, puedes hacerlo, pero tú ya viste que genera “lag”.
+  //    Aquí lo dejamos siempre visible para no bloquear UX.
+  const hasAnalyticsTab = true;
+
+  // 2) Cargar suscripción en background + cacheada
   useEffect(() => {
     let alive = true;
 
-    const loadSubscription = async () => {
-      // Superadmin: no necesitas consultar nada
+    const load = async () => {
       if (user?.role === 'superadmin') {
+        // superadmin: no necesita fetch
         if (!alive) return;
-        setSubState({ status: 'ready', sub: {} as any });
+        setSub({} as any);
+        setLoadingSub(false);
         return;
       }
 
       if (!restaurantId) {
         if (!alive) return;
-        setSubState({ status: 'idle', sub: null });
+        setSub(null);
+        setLoadingSub(false);
         return;
       }
 
-      // 1) Intenta caché en memoria
-      const cached = subscriptionCache.get(restaurantId);
       const now = Date.now();
-      if (cached && now - cached.ts < SUB_CACHE_TTL_MS) {
+
+      // a) memoria
+      const mem = subCache.get(restaurantId);
+      if (mem && now - mem.ts < TTL_MS) {
         if (!alive) return;
-        setSubState({ status: 'ready', sub: cached.sub });
+        setSub(mem.sub);
+        setLoadingSub(false);
         return;
       }
 
-      // 2) (Opcional) cache en sessionStorage para recargas suaves
-      try {
-        const key = `sub-cache:${restaurantId}`;
-        const raw = sessionStorage.getItem(key);
-        if (raw) {
-          const parsed = JSON.parse(raw) as SubCacheEntry;
-          if (parsed?.ts && now - parsed.ts < SUB_CACHE_TTL_MS) {
-            subscriptionCache.set(restaurantId, parsed);
-            if (!alive) return;
-            setSubState({ status: 'ready', sub: parsed.sub });
-            return;
-          }
-        }
-      } catch {
-        // ignorar errores de storage
+      // b) sessionStorage
+      const sess = readSession(restaurantId);
+      if (sess && now - sess.ts < TTL_MS) {
+        subCache.set(restaurantId, sess);
+        if (!alive) return;
+        setSub(sess.sub);
+        setLoadingSub(false);
+        return;
       }
 
-      // 3) Si no hay cache, consulta
+      // c) fetch
       if (!alive) return;
-      setSubState((s) => ({ ...s, status: 'loading' }));
+      setLoadingSub(true);
 
-      try {
-        const { data, error } = await supabase
-          .from('subscriptions')
-          .select('id, restaurant_id, status, plan_name, created_at')
-          .eq('restaurant_id', restaurantId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+      const fresh = await fetchSubscriptionOnce(restaurantId);
 
-        if (!alive) return;
+      if (!alive) return;
 
-        if (error) {
-          console.error('[Sidebar] Subscription query error:', error);
-          setSubState({ status: 'error', sub: null });
-          return;
-        }
+      const entry: CacheEntry = { ts: now, sub: fresh };
+      subCache.set(restaurantId, entry);
+      writeSession(restaurantId, entry);
 
-        const sub = (data ?? null) as Subscription | null;
-
-        // Guardar cache
-        const entry: SubCacheEntry = { ts: now, sub };
-        subscriptionCache.set(restaurantId, entry);
-        try {
-          sessionStorage.setItem(`sub-cache:${restaurantId}`, JSON.stringify(entry));
-        } catch {
-          // ignore
-        }
-
-        setSubState({ status: 'ready', sub });
-      } catch (e) {
-        console.error('[Sidebar] Subscription query exception:', e);
-        if (!alive) return;
-        setSubState({ status: 'error', sub: null });
-      }
+      setSub(fresh);
+      setLoadingSub(false);
     };
 
-    loadSubscription();
+    load();
     return () => {
       alive = false;
     };
   }, [user?.role, restaurantId]);
 
-  /**
-   * Mantienes tu comportamiento:
-   * - Mientras carga: permitir (para que la pestaña aparezca rápido)
-   * - Luego: depende del plan
-   */
-  const hasAnalyticsAccess = useMemo(() => {
-    if (user?.role === 'superadmin') return true;
-
-    if (subState.status === 'loading' || subState.status === 'idle') return true;
-
-    if (!subState.sub) return false;
-
-    const planName = String((subState.sub as any).plan_name ?? '').trim().toLowerCase();
-    return planName !== 'free';
-  }, [user?.role, subState.status, subState.sub]);
-
+  // Tabs memoizados (barato, pero ok)
   const superAdminTabs = useMemo(
     () => [
       { id: 'dashboard', name: t('dashboard'), icon: Home },
@@ -181,14 +193,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'settings', name: t('settings'), icon: Settings }
     ];
 
-    if (hasAnalyticsAccess) {
+    if (hasAnalyticsTab) {
       base.push({ id: 'analytics', name: t('analytics'), icon: BarChart3 });
     }
 
     return base;
-  }, [t, hasAnalyticsAccess]);
+  }, [t, hasAnalyticsTab]);
 
   const tabs = user?.role === 'superadmin' ? superAdminTabs : restaurantTabs;
+
+  // Texto “Plan: …” rápido (no bloquea)
+  const planLabel = useMemo(() => {
+    if (user?.role === 'superadmin') return 'SUPERADMIN';
+    if (loadingSub) return t('loading') || 'Cargando…';
+    const planName = String((sub as any)?.plan_name ?? '').trim();
+    return planName || 'FREE';
+  }, [user?.role, loadingSub, sub, t]);
 
   return (
     <>
@@ -207,8 +227,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
-        <nav className="mt-8">
+        <nav className="mt-6">
           <div className="px-4">
+            {/* Indicador visual (no bloquea) */}
+            <div className="mb-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{t('statusSubscription') ?? 'Suscripción'}</span>
+                <span className="font-semibold">
+                  {planLabel}
+                </span>
+              </div>
+
+              {/* “Skeleton” simple */}
+              {loadingSub && (
+                <div className="mt-2 h-2 w-full rounded bg-gray-100 overflow-hidden">
+                  <div className="h-2 w-1/2 bg-gray-200 animate-pulse rounded" />
+                </div>
+              )}
+            </div>
+
             <ul className="space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -223,9 +260,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       className={`
                         w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                        ${isActive
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}
+                        ${
+                          isActive
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        }
                       `}
                     >
                       <Icon className="w-5 h-5 mr-3" />
