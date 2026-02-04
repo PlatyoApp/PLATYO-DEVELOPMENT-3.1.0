@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Store, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -9,6 +9,38 @@ import { TermsAndConditions } from './TermsAndConditions';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
+}
+
+const PASSWORD_MIN_LENGTH = 8;
+
+// Lista corta opcional para “no común” en front (backend manda la verdad final)
+const COMMON_PASSWORDS = new Set([
+  '12345678',
+  'password',
+  'qwerty123',
+  '123456789',
+  'abc12345',
+  '11111111',
+  'password123',
+]);
+
+function validatePassword(pw: string) {
+  if (!pw) return 'La contraseña es obligatoria';
+  if (pw.length < PASSWORD_MIN_LENGTH) return `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`;
+
+  const hasUpper = /[A-Z]/.test(pw);
+  const hasLower = /[a-z]/.test(pw);
+  const hasNumber = /\d/.test(pw);
+
+  if (!hasUpper || !hasLower || !hasNumber) {
+    return 'Debe incluir mayúsculas, minúsculas y números';
+  }
+
+  if (COMMON_PASSWORDS.has(pw.toLowerCase())) {
+    return 'La contraseña es demasiado común';
+  }
+
+  return '';
 }
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) => {
@@ -22,40 +54,41 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
     ownerName: '',
     acceptTerms: false,
   });
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+
+  // Lo dejo por si luego quieres usar una pantalla de éxito, pero NO lo activamos.
   const [success, setSuccess] = useState(false);
+
   const [showTermsModal, setShowTermsModal] = useState(false);
-  
+
   const { register } = useAuth();
   const { t } = useLanguage();
+
+  const emailRegex = useMemo(() => /\S+@\S+\.\S+/, []);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.restaurantName.trim()) {
-      newErrors.restaurantName = t('restaurantNameRequired');
-    }
+    if (!formData.restaurantName.trim()) newErrors.restaurantName = t('restaurantNameRequired');
 
     if (!formData.email.trim()) {
       newErrors.email = t('emailRequired');
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (!emailRegex.test(formData.email.trim())) {
       newErrors.email = t('invalidEmail');
     }
 
-    if (!formData.password) {
-      newErrors.password = t('passwordRequired');
-    } else if (formData.password.length < 6) {
-      newErrors.password = t('passwordTooShort');
-    }
+    const passwordError = validatePassword(formData.password);
+    if (passwordError) newErrors.password = passwordError;
 
-    if (formData.password !== formData.confirmPassword) {
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = t('passwordRequired');
+    } else if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = t('passwordsDontMatch');
     }
 
-    if (!formData.acceptTerms) {
-      newErrors.acceptTerms = t('mustAcceptTerms');
-    }
+    if (!formData.acceptTerms) newErrors.acceptTerms = t('mustAcceptTerms');
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -63,27 +96,45 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    if (loading) return;
+
+    setErrors(prev => ({ ...prev, general: '' }));
+
     if (!validateForm()) return;
 
     setLoading(true);
-
     try {
       const result = await register({
-        restaurantName: formData.restaurantName,
-        email: formData.email,
+        restaurantName: formData.restaurantName.trim(),
+        email: formData.email.trim(),
         password: formData.password,
         phone: formData.phone,
-        address: formData.address,
-        ownerName: formData.ownerName,
+        address: formData.address.trim(),
+        ownerName: formData.ownerName.trim(),
       });
 
       if (result.success) {
-        setSuccess(true);
+        /**
+         * IMPORTANTE:
+         * Como ahora el AuthContext NO hace signOut, el usuario queda autenticado.
+         * Normalmente tu router/guard detectará isAuthenticated y lo dejará en el dashboard.
+         *
+         * Por eso NO mostramos pantalla de "success" para volver al login.
+         *
+         * Si aun así quieres mostrar un mensaje dentro del formulario, podrías setear un estado
+         * tipo "registered = true" y mostrar un banner, pero sin cambiar de ruta.
+         */
+        // setSuccess(true);
       } else {
-        setErrors({ general: result.error || t('registerError') });
+        const msg = result.error || t('registerError');
+        const looksLikePassword = /weak|easy|password|contrase/i.test(msg);
+
+        setErrors(prev => ({
+          ...prev,
+          ...(looksLikePassword ? { password: msg } : { general: msg }),
+        }));
       }
-    } catch (err) {
+    } catch {
       setErrors({ general: t('unexpectedError') });
     } finally {
       setLoading(false);
@@ -92,13 +143,15 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
+
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
 
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+    // Limpia el error del campo y también el general
+    if (errors[name] || errors.general) {
+      setErrors(prev => ({ ...prev, [name]: '', general: '' }));
     }
   };
 
@@ -230,6 +283,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
               {t('ofService')}
             </label>
           </div>
+
           {errors.acceptTerms && (
             <p className="text-red-600 text-sm">{errors.acceptTerms}</p>
           )}
@@ -260,20 +314,21 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
           </button>
         </div>
       </div>
-
       <Modal
         isOpen={showTermsModal}
         onClose={() => setShowTermsModal(false)}
         title={t('termsModalTitle')}
         size="xl"
       >
-        <TermsAndConditions onAccept={() => {
-          setFormData(prev => ({ ...prev, acceptTerms: true }));
-          setShowTermsModal(false);
-          if (errors.acceptTerms) {
-            setErrors(prev => ({ ...prev, acceptTerms: '' }));
-          }
-        }} />
+        <TermsAndConditions
+          onAccept={() => {
+            setFormData(prev => ({ ...prev, acceptTerms: true }));
+            setShowTermsModal(false);
+            if (errors.acceptTerms) {
+              setErrors(prev => ({ ...prev, acceptTerms: '' }));
+            }
+          }}
+        />
       </Modal>
     </div>
   );
