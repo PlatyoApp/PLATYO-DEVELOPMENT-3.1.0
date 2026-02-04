@@ -196,9 +196,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </ul>
 
             {subscriptionLoaded && (
-            <div className="mt-4 p-2 text-xs text-gray-500 bg-gray-100 rounded">
-              Plan: {String((currentSubscription as any)?.plan_name ?? 'FREE')} | Analytics: {String(hasAnalyticsAccess)}
-            </div>
+
             )}
           </div>
         </nav>
