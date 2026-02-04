@@ -473,22 +473,22 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="text-center p-3 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-600 mb-1">Gratis</p>
-              <p className="text-lg font-bold text-gray-900">${revenueByPlan.free.toFixed(2)}</p>
+              <p className="text-lg font-bold text-gray-900">${revenueByPlan.free}</p>
               <p className="text-xs text-gray-500 mt-1">{planDistribution.free} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-600 mb-1">Basic</p>
-              <p className="text-lg font-bold text-blue-900">${revenueByPlan.basic.toFixed(2)}</p>
+              <p className="text-lg font-bold text-blue-900">${revenueByPlan.basic}</p>
               <p className="text-xs text-blue-600 mt-1">{planDistribution.basic} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-purple-50 rounded-lg">
               <p className="text-xs text-purple-600 mb-1">Pro</p>
-              <p className="text-lg font-bold text-purple-900">${revenueByPlan.pro.toFixed(2)}</p>
+              <p className="text-lg font-bold text-purple-900">${revenueByPlan.pro}</p>
               <p className="text-xs text-purple-600 mt-1">{planDistribution.pro} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-orange-50 rounded-lg">
               <p className="text-xs text-orange-600 mb-1">Business</p>
-              <p className="text-lg font-bold text-orange-900">${revenueByPlan.business.toFixed(2)}</p>
+              <p className="text-lg font-bold text-orange-900">${revenueByPlan.business}</p>
               <p className="text-xs text-orange-600 mt-1">{planDistribution.business} suscripciones</p>
             </div>
           </div>
