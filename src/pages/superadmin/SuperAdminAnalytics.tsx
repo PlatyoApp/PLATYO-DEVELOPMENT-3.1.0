@@ -261,10 +261,10 @@ export const SuperAdminAnalytics: React.FC = () => {
     csvData.push([]);
 
     csvData.push(['MÉTRICAS FINANCIERAS']);
-    csvData.push(['MRR (Ingreso Recurrente Mensual)', `$${mrr.toFixed(2)}`]);
-    csvData.push(['ARR (Ingreso Recurrente Anual)', `$${arr.toFixed(2)}`]);
-    csvData.push(['Ingresos Totales Activos', `$${totalRevenue.toFixed(2)}`]);
-    csvData.push(['Potencial de Ingresos', `$${potentialRevenue.toFixed(2)}`]);
+    csvData.push(['MRR (Ingreso Recurrente Mensual)', `$${mrr}`]);
+    csvData.push(['ARR (Ingreso Recurrente Anual)', `$${arr}`]);
+    csvData.push(['Ingresos Totales Activos', `$${totalRevenue}`]);
+    csvData.push(['Potencial de Ingresos', `$${potentialRevenue}`]);
     csvData.push(['Valor Promedio por Plan', `$${calculateAveragePlanValue()}`]);
     csvData.push([]);
 
@@ -277,10 +277,10 @@ export const SuperAdminAnalytics: React.FC = () => {
     csvData.push([]);
 
     csvData.push(['DISTRIBUCIÓN POR PLAN']);
-    csvData.push(['Plan FREE', planDistribution.free, `$${revenueByPlan.free.toFixed(2)}`]);
-    csvData.push(['Plan Basic', planDistribution.basic, `$${revenueByPlan.basic.toFixed(2)}`]);
-    csvData.push(['Plan Pro', planDistribution.pro, `$${revenueByPlan.pro.toFixed(2)}`]);
-    csvData.push(['Plan Business', planDistribution.business, `$${revenueByPlan.business.toFixed(2)}`]);
+    csvData.push(['Plan FREE', planDistribution.free, `$${revenueByPlan.free}`]);
+    csvData.push(['Plan Basic', planDistribution.basic, `$${revenueByPlan.basic}`]);
+    csvData.push(['Plan Pro', planDistribution.pro, `$${revenueByPlan.pro}`]);
+    csvData.push(['Plan Business', planDistribution.business, `$${revenueByPlan.business}`]);
     csvData.push([]);
 
     csvData.push(['DISTRIBUCIÓN POR DURACIÓN']);
