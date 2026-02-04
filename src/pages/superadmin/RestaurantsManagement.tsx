@@ -724,7 +724,7 @@ export const RestaurantsManagement: React.FC = () => {
                   >
                     {subscriptionPlans.map(plan => (
                       <option key={plan.id} value={plan.slug}>
-                        {plan.name}/{plan.billing_period === 'monthly' ? 'mes' : 'año'}
+                        {plan.name}
                       </option>
                     ))}
                   </select>
