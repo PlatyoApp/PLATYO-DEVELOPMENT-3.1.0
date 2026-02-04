@@ -68,18 +68,19 @@ export const RestaurantAnalytics: React.FC = () => {
     } catch (err) {
       console.error('[Analytics] Exception loading analytics data:', err);
     }
-  }, [restaurant?.id, restaurant?.id]); // intencional: solo depende del id
+  }, [restaurant?.id]);
 
+  // ✅ Por defecto: solo HOY
   useEffect(() => {
     if (!restaurant) return;
 
     loadAnalyticsData();
 
     const today = new Date();
-    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const todayStr = today.toISOString().split('T')[0];
 
-    setEndDate(today.toISOString().split('T')[0]);
-    setStartDate(thirtyDaysAgo.toISOString().split('T')[0]);
+    setStartDate(todayStr);
+    setEndDate(todayStr);
   }, [restaurant, loadAnalyticsData]);
 
   const filteredOrders = useMemo(() => {
@@ -110,6 +111,7 @@ export const RestaurantAnalytics: React.FC = () => {
     });
   }, [orders, startDate, endDate, selectedCategory, selectedOrderType, selectedStatus]);
 
+  // ✅ Métricas rápidas: una sola pasada (sin “pedidos recientes”)
   const analytics = useMemo(() => {
     let totalOrders = 0;
     let completedOrders = 0;
@@ -131,16 +133,7 @@ export const RestaurantAnalytics: React.FC = () => {
     };
 
     const monthlyData: Record<string, number> = {};
-
     const productSales: Record<string, { product: Product; quantity: number; revenue: number }> = {};
-
-    // últimos 5 sin ordenar todo el array cada vez
-    const recentOrders: Order[] = [];
-    const pushRecent = (o: Order) => {
-      recentOrders.push(o);
-      recentOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      if (recentOrders.length > 5) recentOrders.pop();
-    };
 
     for (const order of filteredOrders) {
       totalOrders++;
@@ -151,18 +144,15 @@ export const RestaurantAnalytics: React.FC = () => {
         ordersByStatus[order.status] += 1;
       }
 
-      // type
+      // type (compatibilidad con dine-in/table)
       if (order.order_type === 'pickup') ordersByType.pickup++;
       else if (order.order_type === 'delivery') ordersByType.delivery++;
       else if (order.order_type === 'dine-in' || order.order_type === 'table') ordersByType.table++;
 
-      // month bucket
+      // monthly bucket
       const d = new Date(order.created_at);
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
-
-      // recent
-      pushRecent(order);
 
       // delivered aggregates
       if (order.status === 'delivered') {
@@ -201,11 +191,15 @@ export const RestaurantAnalytics: React.FC = () => {
       ordersByType,
       monthlyOrders,
       topProducts,
-      recentOrders,
     };
   }, [filteredOrders]);
 
-  const getActiveFiltersCount = useMemo(() => {
+  const activeProductsCount = useMemo(
+    () => products.filter(p => p.status === 'active').length,
+    [products]
+  );
+
+  const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (startDate || endDate) count++;
     if (selectedCategory !== 'all') count++;
@@ -215,6 +209,7 @@ export const RestaurantAnalytics: React.FC = () => {
   }, [startDate, endDate, selectedCategory, selectedOrderType, selectedStatus]);
 
   const clearAllFilters = useCallback(() => {
+    // “limpiar” = sin filtros (como tu versión original)
     setStartDate('');
     setEndDate('');
     setSelectedCategory('all');
@@ -224,9 +219,11 @@ export const RestaurantAnalytics: React.FC = () => {
 
   const generateFileName = useCallback(() => {
     const restaurantName = restaurant?.name || t('fileNameRestaurantDefault');
-    const dateRange = startDate && endDate ? `_${startDate}_${endDate}` :
+    const dateRange =
+      startDate && endDate ? `_${startDate}_${endDate}` :
       startDate ? `_${t('fileNamePrefixFrom')}_${startDate}` :
-        endDate ? `_${t('fileNamePrefixUntil')}_${endDate}` : '';
+      endDate ? `_${t('fileNamePrefixUntil')}_${endDate}` : '';
+
     const timestamp = new Date().toISOString().split('T')[0];
     return `${restaurantName}_estadisticas${dateRange}_${timestamp}.csv`;
   }, [restaurant?.name, t, startDate, endDate]);
@@ -250,6 +247,7 @@ export const RestaurantAnalytics: React.FC = () => {
     csvData.push([]);
 
     csvData.push([t('csvOrderTypeDistribution')]);
+    // Conservamos tu cálculo original en CSV (se puede optimizar más, pero no es crítico)
     const ordersByTypeCSV = {
       pickup: filteredOrders.filter(o => o.order_type === 'pickup').length,
       delivery: filteredOrders.filter(o => o.order_type === 'delivery').length,
@@ -272,18 +270,12 @@ export const RestaurantAnalytics: React.FC = () => {
     csvData.push([t('csvTopSellingProducts')]);
     csvData.push([t('csvPosition'), t('csvProduct'), t('csvQuantitySold'), t('csvRevenue')]);
     analytics.topProducts.forEach((item, index) => {
-      csvData.push([
-        `#${index + 1}`,
-        item.product.name,
-        item.quantity,
-        formatCurrency(item.revenue, currency)
-      ]);
+      csvData.push([`#${index + 1}`, item.product.name, item.quantity, formatCurrency(item.revenue, currency)]);
     });
     csvData.push([]);
 
     csvData.push([t('csvSalesByCategory')]);
     csvData.push([t('csvCategory'), t('csvProductCount'), t('csvRevenue')]);
-
     const salesByCategory: { [key: string]: { name: string; count: number; revenue: number } } = {};
 
     filteredOrders.filter(o => o.status === 'delivered').forEach(order => {
@@ -404,9 +396,9 @@ export const RestaurantAnalytics: React.FC = () => {
         ]);
       });
 
-    const csvContent = csvData.map(row =>
-      row.map((field: any) => `"${String(field).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
+    const csvContent = csvData
+      .map(row => row.map((field: any) => `"${String(field).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
 
     return '\ufeff' + csvContent;
   }, [t, restaurant?.name, startDate, endDate, analytics, filteredOrders, currency, categories]);
@@ -484,7 +476,7 @@ export const RestaurantAnalytics: React.FC = () => {
             "
           >
             {t('btnAdvancedFilters')}
-            {getActiveFiltersCount > 0 && ` (${getActiveFiltersCount})`}
+            {activeFiltersCount > 0 && ` (${activeFiltersCount})`}
           </Button>
         </div>
       </div>
@@ -569,7 +561,7 @@ export const RestaurantAnalytics: React.FC = () => {
             </div>
           </div>
 
-          {getActiveFiltersCount > 0 && (
+          {activeFiltersCount > 0 && (
             <div className="flex flex-wrap items-center gap-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <span className="text-sm font-medium text-blue-800">{t('filterActiveLabel')}</span>
 
@@ -587,8 +579,11 @@ export const RestaurantAnalytics: React.FC = () => {
 
               {selectedOrderType !== 'all' && (
                 <Badge variant="info">
-                  🛍️ {selectedOrderType === 'pickup' ? t('orderTypePickup') :
-                    selectedOrderType === 'delivery' ? t('orderTypeDelivery') : t('orderTypeTable')}
+                  🛍️ {selectedOrderType === 'pickup'
+                    ? t('orderTypePickup')
+                    : selectedOrderType === 'delivery'
+                      ? t('orderTypeDelivery')
+                      : t('orderTypeTable')}
                 </Badge>
               )}
 
@@ -617,7 +612,7 @@ export const RestaurantAnalytics: React.FC = () => {
           <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
             📊 {t('filterSummaryShowing')} <strong>{filteredOrders.length}</strong>{' '}
             {filteredOrders.length !== 1 ? t('filterSummaryOrderPlural') : t('filterSummaryOrderSingular')}
-            {getActiveFiltersCount > 0 ? t('filterSummaryMatchingFilters') : t('filterSummaryInTotal')}
+            {activeFiltersCount > 0 ? t('filterSummaryMatchingFilters') : t('filterSummaryInTotal')}
           </div>
         </div>
       )}
@@ -683,9 +678,7 @@ export const RestaurantAnalytics: React.FC = () => {
             <BarChart3 className="h-8 w-8 text-orange-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">{t('statActiveProducts')}</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {products.filter(p => p.status === 'active').length}
-              </p>
+              <p className="text-2xl font-semibold text-gray-900">{activeProductsCount}</p>
             </div>
           </div>
           <div className="mt-2">
@@ -758,11 +751,10 @@ export const RestaurantAnalytics: React.FC = () => {
             <Calendar className="w-5 h-5 mr-2" />
             {t('chartOrdersByMonth')}
           </h3>
+
           <div className="space-y-3">
             {analytics.monthlyOrders.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
-                {t('chartNoData')}
-              </p>
+              <p className="text-sm text-gray-500 text-center py-4">{t('chartNoData')}</p>
             ) : (
               analytics.monthlyOrders.map(([month, count]) => (
                 <div key={month} className="flex items-center justify-between">
@@ -870,69 +862,34 @@ export const RestaurantAnalytics: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">{t('chartTopProductsTitle')}</h3>
-          </div>
-          <div className="p-6">
-            {analytics.topProducts.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
-                {t('chartNoProducts')}
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {analytics.topProducts.map((item, index) => (
-                  <div key={item.product.id} className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <span className="text-sm font-medium text-gray-500 w-6">#{index + 1}</span>
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-900">{item.product.name}</p>
-                        <p className="text-xs text-gray-500">{item.quantity} {t('unitsSold')}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">
-                        {formatCurrency(item.revenue, currency)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      {/* Top products */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-medium text-gray-900">{t('chartTopProductsTitle')}</h3>
         </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">{t('recentOrdersTitle')}</h3>
-          </div>
-          <div className="p-6">
-            {analytics.recentOrders.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
-                {t('noOrdersYet')}
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {analytics.recentOrders.map(order => (
-                  <div key={order.id} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{t('orderNumber')} {order.order_number}</p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(order.created_at).toLocaleDateString()} - {order.customer?.name || t('customerUnknown')}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">
-                        {formatCurrency(order.total, currency)}
-                      </p>
-                      {getStatusBadge(order.status)}
+        <div className="p-6">
+          {analytics.topProducts.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">{t('chartNoProducts')}</p>
+          ) : (
+            <div className="space-y-4">
+              {analytics.topProducts.map((item, index) => (
+                <div key={item.product.id} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <span className="text-sm font-medium text-gray-500 w-6">#{index + 1}</span>
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-900">{item.product.name}</p>
+                      <p className="text-xs text-gray-500">{item.quantity} {t('unitsSold')}</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-gray-900">
+                      {formatCurrency(item.revenue, currency)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
