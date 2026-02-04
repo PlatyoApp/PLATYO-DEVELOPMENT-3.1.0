@@ -462,7 +462,7 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="bg-white p-4 rounded-lg border border-green-200">
             <p className="text-sm font-medium text-gray-600">Valor Promedio</p>
             <p className="text-3xl font-bold text-orange-600 mt-2">
-              ${calculateAveragePlanValue()}
+              ${calculateAveragePlanValue().toFixed(2)}
             </p>
             <p className="text-xs text-gray-500 mt-1">Por suscripción de pago</p>
           </div>
@@ -479,7 +479,7 @@ export const SuperAdminAnalytics: React.FC = () => {
             <div className="text-center p-3 bg-blue-50 rounded-lg">
               <p className="text-xs text-blue-600 mb-1">Basic</p>
               <p className="text-lg font-bold text-blue-900">${revenueByPlan.basic}</p>
-              <p className="text-xs text-blue-600 mt-1">{planDistribution.basic} suscripciones</p>
+              <p className="text-xs text-blue-600 mt-1">{planDistributiVon.basic} suscripciones</p>
             </div>
             <div className="text-center p-3 bg-purple-50 rounded-lg">
               <p className="text-xs text-purple-600 mb-1">Pro</p>
