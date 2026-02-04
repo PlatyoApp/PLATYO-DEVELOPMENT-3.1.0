@@ -101,6 +101,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const hasAnalyticsAccess = useMemo(() => {
     if (user?.role === 'superadmin') return true;
 
+    // Mientras se está cargando la suscripción, permitir acceso
+    // Se reevaluará cuando termine de cargar
+    if (!subscriptionLoaded) return true;
+
     // Si ya cargó y no hay suscripción activa => no acceso
     if (!currentSubscription) return false;
 
@@ -109,7 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // Tu BD guarda FREE/Basic/Pro/Business. Normalizamos.
     // Regla: solo FREE no tiene analytics.
     return planName !== 'free';
-  }, [user?.role, currentSubscription]);
+  }, [user?.role, currentSubscription, subscriptionLoaded]);
 
   const superAdminTabs = useMemo(
     () => [
@@ -191,12 +195,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               })}
             </ul>
 
-            {/* DEBUG temporal: quítalo cuando quede listo */}
-            {/* 
-            <div className="mt-4 text-xs text-gray-500">
-              loaded: {String(subscriptionLoaded)} | plan: {String((currentSubscription as any)?.plan_name ?? 'none')} | analytics: {String(hasAnalyticsAccess)}
-            </div> 
-            */}
+            {subscriptionLoaded && (
+            <div className="mt-4 p-2 text-xs text-gray-500 bg-gray-100 rounded">
+              Plan: {String((currentSubscription as any)?.plan_name ?? 'FREE')} | Analytics: {String(hasAnalyticsAccess)}
+            </div>
+            )}
           </div>
         </nav>
       </aside>
