@@ -44,7 +44,7 @@ export const availablePlans = [
     currency: 'COP',
     popular: true,
     features: {
-      max_products: 100,
+      max_products: 50,
       max_categories: 25,
       analytics: true,
       custom_domain: true,
@@ -61,7 +61,7 @@ export const availablePlans = [
     currency: 'COP',
     popular: false,
     features: {
-      max_products: 200,
+      max_products: 100,
       max_categories: 50,
       analytics: true,
       custom_domain: true,
