@@ -704,7 +704,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="default">{planDistribution.free} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-gray-600">
-                  Ingreso: $0.00/mes
+                  Ingreso: $0/mes
                 </div>
               </div>
 
