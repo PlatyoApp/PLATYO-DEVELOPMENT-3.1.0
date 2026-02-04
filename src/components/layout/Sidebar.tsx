@@ -153,3 +153,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+console.log('Sidebar currentSubscription:', currentSubscription);
