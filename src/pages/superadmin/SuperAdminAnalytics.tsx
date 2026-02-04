@@ -438,7 +438,7 @@ export const SuperAdminAnalytics: React.FC = () => {
           <div className="bg-white p-4 rounded-lg border border-green-200">
             <p className="text-sm font-medium text-gray-600">MRR</p>
             <p className="text-3xl font-bold text-blue-600 mt-2">
-              ${mrr.toFixed(2)}
+              ${mrr}
             </p>
             <p className="text-xs text-gray-500 mt-1">Ingreso Recurrente Mensual</p>
           </div>
