@@ -32,11 +32,11 @@ const SubscriptionExpiredScreen: React.FC<{ restaurantName?: string }> = ({ rest
   <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center p-4">
     <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center border border-gray-100">
       <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
-        {/* Si ya tienes un icono importado (ej. AlertTriangle), úsalo aquí */}
         <span className="text-red-600 text-2xl font-bold">!</span>
       </div>
 
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Suscripción vencida</h2>
+
       <p className="text-gray-600 mb-5 leading-relaxed">
         {restaurantName ? (
           <>
@@ -58,7 +58,7 @@ const SubscriptionExpiredScreen: React.FC<{ restaurantName?: string }> = ({ rest
         href="https://www.platyo.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center justify-center w-full rounded-xl bg-blue-600 text-white font-medium py-3 hover:bg-blue-700 transition-colors"
+        className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed text-white focus:ring-blue-500 px-6 py-3 text-base w-full bg-gradient-to-r from-orange-400 to-red-500 hover:from-orange-600 hover:to-red-700"
       >
         Ir a platyo.com
       </a>
