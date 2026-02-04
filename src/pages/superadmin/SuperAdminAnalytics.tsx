@@ -714,7 +714,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="info">{planDistribution.basic} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-blue-600">
-                  Ingreso: ${(planDistribution.basic * getPlanPrice('basic')).toFixed(2)}/mes
+                  Ingreso: ${(planDistribution.basic * getPlanPrice('basic'))}/mes
                 </div>
               </div>
 
@@ -724,7 +724,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="success">{planDistribution.pro} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-green-600">
-                  Ingreso: ${(planDistribution.pro * getPlanPrice('pro')).toFixed(2)}/mes
+                  Ingreso: ${(planDistribution.pro * getPlanPrice('pro'))}/mes
                 </div>
               </div>
 
@@ -734,7 +734,7 @@ export const SuperAdminAnalytics: React.FC = () => {
                   <Badge variant="warning">{planDistribution.business} suscripciones</Badge>
                 </div>
                 <div className="text-xs text-orange-600">
-                  Ingreso: ${(planDistribution.business * getPlanPrice('business')).toFixed(2)}/mes
+                  Ingreso: ${(planDistribution.business * getPlanPrice('business'))}/mes
                 </div>
               </div>
             </div>
