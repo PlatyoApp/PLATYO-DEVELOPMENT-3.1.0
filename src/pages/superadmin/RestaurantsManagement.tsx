@@ -45,12 +45,25 @@ export const RestaurantsManagement: React.FC = () => {
 
   // Filters
   const [filter, setFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+
+  // ✅ Búsqueda fluida (debounced)
+  const [searchInput, setSearchInput] = useState(''); // lo que escribes
+  const [searchTerm, setSearchTerm] = useState('');   // lo que dispara query
+
   const [startDate, setStartDate] = useState(''); // YYYY-MM-DD
   const [endDate, setEndDate] = useState('');     // YYYY-MM-DD
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
 
   const [loading, setLoading] = useState(true);
+
+  // Debounce: solo dispara búsqueda cuando paras de escribir
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setSearchTerm(searchInput.trim());
+    }, 350);
+
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
 
   // Map suscripciones por restaurante (lookup rápido)
   const subscriptionByRestaurantId = useMemo(() => {
@@ -65,22 +78,17 @@ export const RestaurantsManagement: React.FC = () => {
     return subscriptionByRestaurantId.get(restaurantId);
   }, [subscriptionByRestaurantId]);
 
-  const isRestaurantActive = useCallback((restaurantId: string) => {
-    const sub = getSubscription(restaurantId);
-    return sub?.status === 'active';
-  }, [getSubscription]);
-
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil(totalRestaurantsCount / PAGE_SIZE));
   }, [totalRestaurantsCount]);
 
-  // Cuando cambien filtros/orden/búsqueda, volvemos a página 1
+  // ✅ Cuando cambien filtros/orden/búsqueda (DEBOUNCED), volvemos a página 1
+  // OJO: aquí depende de searchTerm (debounced), NO de searchInput
   useEffect(() => {
     setPage(1);
   }, [filter, searchTerm, startDate, endDate, sortBy]);
 
   const buildRestaurantsQuery = useCallback(() => {
-    // Selecciona SOLO lo que usas (más rápido). Añade campos si tu modal los requiere.
     let q = supabase
       .from('restaurants')
       .select(
@@ -91,7 +99,6 @@ export const RestaurantsManagement: React.FC = () => {
     // Search (OR en name/email)
     const term = searchTerm.trim();
     if (term) {
-      // ilike es case-insensitive en Postgres
       q = q.or(`name.ilike.%${term}%,email.ilike.%${term}%`);
     }
 
@@ -121,13 +128,11 @@ export const RestaurantsManagement: React.FC = () => {
     try {
       setLoading(true);
 
-      // 1) Restaurantes paginados
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
       const restaurantsQuery = buildRestaurantsQuery().range(from, to);
 
-      // 2) Suscripciones y planes en paralelo
       const [restaurantsRes, subscriptionsRes, plansRes] = await Promise.all([
         restaurantsQuery,
         supabase
@@ -148,19 +153,13 @@ export const RestaurantsManagement: React.FC = () => {
       const subscriptionsData = subscriptionsRes.data || [];
       const plansData = plansRes.data || [];
 
-      // Filtro activo/inactivo:
-      // Nota: como el estado activo depende de subscriptions, lo aplicamos aquí sin perder paginación.
-      // Para datasets enormes, lo ideal es una vista SQL o join. Pero mantenemos tu estructura.
+      // Filtro activo/inactivo (depende de subscriptions)
       let finalRestaurants = restaurantsData;
       if (filter !== 'all') {
         finalRestaurants = restaurantsData.filter(r => {
           const active = subscriptionsData.find(s => s.restaurant_id === r.id)?.status === 'active';
           return filter === 'active' ? active : !active;
         });
-
-        // IMPORTANTE:
-        // Este filtrado posterior puede hacer que una página quede con < 10 resultados.
-        // Si necesitas que SIEMPRE rellene 10 por página, hay que hacerlo con join/vista en SQL.
       }
 
       setRestaurants(finalRestaurants);
@@ -407,9 +406,13 @@ export const RestaurantsManagement: React.FC = () => {
             <div className="flex-1">
               <Input
                 placeholder="Buscar por nombre o email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
+              {/* Tip opcional: feedback de debounce */}
+              {searchInput !== searchTerm && (
+                <p className="text-xs text-gray-500 mt-1">Buscando…</p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-gray-500" />
@@ -446,11 +449,13 @@ export const RestaurantsManagement: React.FC = () => {
                 <option value="name">Nombre A-Z</option>
               </select>
             </div>
-            {(startDate || endDate || sortBy !== 'newest' || searchTerm.trim() || filter !== 'all') && (
+
+            {(startDate || endDate || sortBy !== 'newest' || searchInput.trim() || filter !== 'all') && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  setSearchInput('');
                   setSearchTerm('');
                   setFilter('all');
                   setStartDate('');
