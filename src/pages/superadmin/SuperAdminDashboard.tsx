@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Store, Users, CreditCard, TrendingUp, Calendar, RefreshCw, DollarSign, Activity, Clock } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Store, CreditCard, TrendingUp, RefreshCw, DollarSign, Activity, Clock } from 'lucide-react';
 import { Restaurant, Subscription } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { Badge } from '../../components/ui/Badge';
@@ -10,99 +10,143 @@ export const SuperAdminDashboard: React.FC = () => {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
 
-      const { data: restaurantData, error: restaurantError } = await supabase
-        .from('restaurants')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Cargar en paralelo + pedir solo columnas usadas
+      const [restaurantsRes, subscriptionsRes] = await Promise.all([
+        supabase
+          .from('restaurants')
+          .select('id, name, email, created_at, logo_url') // añade más campos solo si los necesitas
+          .order('created_at', { ascending: false }),
 
-      if (restaurantError) {
-        console.error('Error loading restaurants:', restaurantError);
-        throw restaurantError;
+        supabase
+          .from('subscriptions')
+          .select('id, restaurant_id, status, plan_name') // solo lo usado en stats/badges
+      ]);
+
+      if (restaurantsRes.error) {
+        console.error('Error loading restaurants:', restaurantsRes.error);
+        throw restaurantsRes.error;
+      }
+      if (subscriptionsRes.error) {
+        console.error('Error loading subscriptions:', subscriptionsRes.error);
+        throw subscriptionsRes.error;
       }
 
-      console.log('Restaurants loaded:', restaurantData?.length || 0);
-
-      const { data: subscriptionData, error: subscriptionError } = await supabase
-        .from('subscriptions')
-        .select('*');
-
-      if (subscriptionError) {
-        console.error('Error loading subscriptions:', subscriptionError);
-        throw subscriptionError;
-      }
-
-      console.log('Subscriptions loaded:', subscriptionData?.length || 0);
-
-      setRestaurants(restaurantData || []);
-      setSubscriptions(subscriptionData || []);
+      setRestaurants(restaurantsRes.data || []);
+      setSubscriptions(subscriptionsRes.data || []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const getRestaurantSubscription = (restaurantId: string) => {
-    return subscriptions.find(s => s.restaurant_id === restaurantId);
-  };
+  useEffect(() => {
+    // Evita recrear función y asegura carga inicial rápida
+    loadData();
+  }, [loadData]);
 
-  const isRestaurantActive = (restaurantId: string) => {
-    const subscription = getRestaurantSubscription(restaurantId);
-    return subscription?.status === 'active';
-  };
+  // Map para encontrar suscripción por restaurant_id en O(1) (evita .find() en bucles)
+  const subscriptionByRestaurantId = useMemo(() => {
+    const map = new Map<string, Subscription>();
+    for (const s of subscriptions) {
+      if (s.restaurant_id) map.set(s.restaurant_id, s);
+    }
+    return map;
+  }, [subscriptions]);
 
-  const stats = {
-    totalRestaurants: restaurants.length,
-    activeRestaurants: restaurants.filter(r => isRestaurantActive(r.id)).length,
-    inactiveRestaurants: restaurants.filter(r => !isRestaurantActive(r.id)).length,
-    freePlan: subscriptions.filter(s => s.plan_name === 'free').length,
-    basicPlan: subscriptions.filter(s => s.plan_name === 'basic').length,
-    proPlan: subscriptions.filter(s => s.plan_name === 'pro').length,
-    businessPlan: subscriptions.filter(s => s.plan_name === 'business').length,
-    activeSubscriptions: subscriptions.filter(s => s.status === 'active').length,
-    expiredSubscriptions: subscriptions.filter(s => s.status === 'expired').length,
-  };
+  const getRestaurantSubscription = useCallback(
+    (restaurantId: string) => subscriptionByRestaurantId.get(restaurantId),
+    [subscriptionByRestaurantId]
+  );
 
-  const recentRestaurants = restaurants
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
+  const isRestaurantActive = useCallback(
+    (restaurantId: string) => getRestaurantSubscription(restaurantId)?.status === 'active',
+    [getRestaurantSubscription]
+  );
 
-  const getRestaurantStatusBadge = (restaurantId: string) => {
-    const subscription = getRestaurantSubscription(restaurantId);
-    if (!subscription) {
-      return <Badge variant="gray">Sin suscripción</Badge>;
+  const stats = useMemo(() => {
+    let activeRestaurants = 0;
+    let inactiveRestaurants = 0;
+
+    for (const r of restaurants) {
+      if (isRestaurantActive(r.id)) activeRestaurants++;
+      else inactiveRestaurants++;
     }
 
-    return subscription.status === 'active'
-      ? <Badge variant="success">Activo</Badge>
-      : <Badge variant="error">Inactivo</Badge>;
-  };
+    let freePlan = 0;
+    let basicPlan = 0;
+    let proPlan = 0;
+    let businessPlan = 0;
+    let activeSubscriptions = 0;
+    let expiredSubscriptions = 0;
 
-  const getSubscriptionBadge = (subscription: Subscription | undefined) => {
+    for (const s of subscriptions) {
+      if (s.status === 'active') activeSubscriptions++;
+      if (s.status === 'expired') expiredSubscriptions++;
+
+      switch (s.plan_name) {
+        case 'free':
+          freePlan++;
+          break;
+        case 'basic':
+          basicPlan++;
+          break;
+        case 'pro':
+          proPlan++;
+          break;
+        case 'business':
+          businessPlan++;
+          break;
+      }
+    }
+
+    return {
+      totalRestaurants: restaurants.length,
+      activeRestaurants,
+      inactiveRestaurants,
+      freePlan,
+      basicPlan,
+      proPlan,
+      businessPlan,
+      activeSubscriptions,
+      expiredSubscriptions,
+    };
+  }, [restaurants, subscriptions, isRestaurantActive]);
+
+  const getRestaurantStatusBadge = useCallback(
+    (restaurantId: string) => {
+      const subscription = getRestaurantSubscription(restaurantId);
+      if (!subscription) return <Badge variant="gray">Sin suscripción</Badge>;
+      return subscription.status === 'active'
+        ? <Badge variant="success">Activo</Badge>
+        : <Badge variant="error">Inactivo</Badge>;
+    },
+    [getRestaurantSubscription]
+  );
+
+  const getSubscriptionBadge = useCallback((subscription: Subscription | undefined) => {
     if (!subscription) return <Badge variant="gray">Sin suscripción</Badge>;
 
-    const planName = subscription.plan_name === 'free' ? 'FREE' :
-                     subscription.plan_name === 'basic' ? 'Basic' :
-                     subscription.plan_name === 'pro' ? 'Pro' :
-                     subscription.plan_name === 'business' ? 'Business' :
-                     subscription.plan_name.toUpperCase();
+    const planName =
+      subscription.plan_name === 'free' ? 'FREE' :
+      subscription.plan_name === 'basic' ? 'Basic' :
+      subscription.plan_name === 'pro' ? 'Pro' :
+      subscription.plan_name === 'business' ? 'Business' :
+      (subscription.plan_name || '').toUpperCase();
 
-    const variant = subscription.plan_name === 'free' ? 'gray' :
-                   subscription.plan_name === 'basic' ? 'info' :
-                   subscription.plan_name === 'pro' ? 'success' :
-                   subscription.plan_name === 'business' ? 'warning' :
-                   'default';
+    const variant =
+      subscription.plan_name === 'free' ? 'gray' :
+      subscription.plan_name === 'basic' ? 'info' :
+      subscription.plan_name === 'pro' ? 'success' :
+      subscription.plan_name === 'business' ? 'warning' :
+      'default';
 
     return <Badge variant={variant}>{planName}</Badge>;
-  };
+  }, []);
 
   if (loading) {
     return (
@@ -125,17 +169,21 @@ export const SuperAdminDashboard: React.FC = () => {
             Vista general del sistema Platyo
           </p>
         </div>
+
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-slate-600 bg-white px-3 py-2 rounded-lg shadow-sm border border-slate-200">
             <Clock className="w-4 h-4" />
             {new Date().toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
           </div>
+
           <Button
             variant="outline"
             size="sm"
             icon={RefreshCw}
             onClick={loadData}
             className="shadow-sm"
+            disabled={loading}
+            loading={loading}
           >
             Actualizar Datos
           </Button>
@@ -172,9 +220,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <p className="text-sm font-medium text-slate-600 mb-1">Plan Gratis</p>
           <p className="text-3xl font-bold text-slate-900 mb-3">{stats.freePlan}</p>
           <div className="pt-3 border-t border-slate-100">
-            <span className="text-xs text-slate-600 font-medium">
-              Sin costo mensual
-            </span>
+            <span className="text-xs text-slate-600 font-medium">Sin costo mensual</span>
           </div>
         </div>
 
@@ -239,79 +285,12 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Restaurants */}
-      <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-        <div className="px-6 py-5 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
-          <h2 className="text-xl font-bold text-slate-900 flex items-center">
-            <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center mr-3">
-              <Calendar className="w-4 h-4 text-white" />
-            </div>
-            Restaurantes Recientes
-          </h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  Restaurante
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  Email
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  Estado
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  Suscripción
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  Registro
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-slate-200">
-              {recentRestaurants.map((restaurant) => {
-                const subscription = subscriptions.find(s => s.restaurant_id === restaurant.id);
-                return (
-                  <tr key={restaurant.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        {restaurant.logo_url ? (
-                          <img
-                            className="h-10 w-10 rounded-xl object-cover mr-3 shadow-sm"
-                            src={restaurant.logo_url}
-                            alt={restaurant.name}
-                          />
-                        ) : (
-                          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center mr-3 shadow-sm">
-                            <Store className="h-5 w-5 text-white" />
-                          </div>
-                        )}
-                        <div className="text-sm font-semibold text-slate-900">
-                          {restaurant.name}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                      {restaurant.email}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getRestaurantStatusBadge(restaurant.id)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getSubscriptionBadge(subscription)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      {new Date(restaurant.created_at).toLocaleDateString('es-CO', { dateStyle: 'medium' })}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Eliminado: Restaurantes Recientes (tal como pediste) */}
+
+      {/* Si en el futuro quieres un listado completo paginado, lo ideal es:
+          - usar range() para paginar
+          - traer solo columnas necesarias
+          - y hacer joins o vistas para evitar múltiples queries */}
     </div>
   );
 };
