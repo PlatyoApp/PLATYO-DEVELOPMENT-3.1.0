@@ -308,13 +308,6 @@ export const RestaurantDashboard: React.FC = () => {
             <Badge variant={currentSubscription?.status === 'active' ? 'success' : 'warning'}>
               {getCurrentPlanName()}
             </Badge>
-            <Sidebar
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              isOpen={isOpen}
-              onClose={onClose}
-              currentPlanName={getCurrentPlanName()}
-            />
           </div>
           <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('statusTableService')}</p>
