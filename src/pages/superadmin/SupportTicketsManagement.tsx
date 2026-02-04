@@ -1,10 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { HelpCircle, MessageSquare, Clock, AlertTriangle, CheckCircle, Eye, Trash2, Filter, Search, Mail, Phone, Calendar, User, Building, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  HelpCircle,
+  MessageSquare,
+  Clock,
+  AlertTriangle,
+  CheckCircle,
+  Eye,
+  Trash2,
+  Filter,
+  Search,
+  Mail,
+  Phone,
+  Calendar,
+  Building,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
-import { Input } from '../../components/ui/Input';
 import { useToast } from '../../hooks/useToast';
 
 interface SupportTicket {
@@ -25,239 +41,102 @@ interface SupportTicket {
   adminNotes?: string;
 }
 
+type GlobalStats = {
+  total: number;
+  pending: number;
+  inProgress: number;
+  resolved: number;
+  urgent: number;
+};
+
+const PAGE_SIZE = 10;
+
+const mapDbStatusToUi = (dbStatus: string): SupportTicket['status'] => {
+  // compatibilidad con tu lógica anterior (open -> pending)
+  if (dbStatus === 'open') return 'pending';
+  if (dbStatus === 'pending') return 'pending';
+  if (dbStatus === 'in_progress') return 'in_progress';
+  if (dbStatus === 'resolved') return 'resolved';
+  if (dbStatus === 'closed') return 'closed';
+  return 'pending';
+};
+
+const mapUiStatusToDb = (uiStatus: SupportTicket['status']) => {
+  return uiStatus === 'pending' ? 'open' : uiStatus;
+};
+
 export const SupportTicketsManagement: React.FC = () => {
   const { showToast } = useToast();
+
+  // Data (solo página actual)
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
-  const [filteredTickets, setFilteredTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+
+  // Modals
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showResponseModal, setShowResponseModal] = useState(false);
+
+  // Search (debounced)
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  // Response form
   const [responseText, setResponseText] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
+
+  // Loading / Pagination
   const [loading, setLoading] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
+  // Global stats (NO dependen de la página)
+  const [globalStats, setGlobalStats] = useState<GlobalStats>({
+    total: 0,
+    pending: 0,
+    inProgress: 0,
+    resolved: 0,
+    urgent: 0,
+  });
+
+  // Debounce búsqueda (igual que subscriptions)
   useEffect(() => {
-    loadTickets();
+    const id = window.setTimeout(() => {
+      setSearchTerm(searchInput.trim());
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
 
-    const channel = supabase
-      .channel('support_tickets_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'support_tickets'
-        },
-        () => {
-          loadTickets();
-        }
-      )
-      .subscribe();
+  // Reset página al cambiar filtros/búsqueda/orden
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, priorityFilter, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
 
-    return () => {
-      supabase.removeChannel(channel);
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  }, [totalCount]);
+
+  const getCategoryName = useCallback((category: string) => {
+    const categories: { [key: string]: string } = {
+      general: 'Consulta General',
+      technical: 'Problema Técnico',
+      billing: 'Facturación',
+      feature: 'Solicitud de Función',
+      account: 'Cuenta y Configuración',
+      other: 'Otro',
     };
+    return categories[category] || category;
   }, []);
 
-  useEffect(() => {
-    filterTickets();
-  }, [tickets, searchTerm, statusFilter, priorityFilter, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
-
-  const loadTickets = async () => {
-    try {
-      const wasInitialLoad = loading && tickets.length === 0;
-      if (wasInitialLoad) {
-        setLoading(true);
-      }
-
-      const { data, error } = await supabase
-        .from('support_tickets')
-        .select(`
-          *,
-          restaurants (
-            name
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      const formattedTickets = (data || []).map((ticket: any) => ({
-        id: ticket.id,
-        restaurantId: ticket.restaurant_id,
-        restaurantName: ticket.restaurants?.name || 'Restaurante Desconocido',
-        subject: ticket.subject,
-        category: ticket.category,
-        priority: ticket.priority,
-        message: ticket.message,
-        contactEmail: ticket.contact_email,
-        contactPhone: ticket.contact_phone || '',
-        status: ticket.status === 'open' ? 'pending' : ticket.status,
-        createdAt: ticket.created_at,
-        updatedAt: ticket.updated_at,
-        response: ticket.response,
-        responseDate: ticket.response_date,
-        adminNotes: ticket.admin_notes,
-      }));
-
-      setTickets(formattedTickets);
-
-      if (!wasInitialLoad) {
-        showToast('success', 'Actualizado', 'Tickets actualizados correctamente', 2000);
-      }
-    } catch (error) {
-      console.error('Error loading tickets:', error);
-      showToast('error', 'Error', 'No se pudieron cargar los tickets de soporte', 3000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterTickets = () => {
-    let filtered = tickets.filter(ticket => {
-      const matchesSearch =
-        ticket.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.restaurantName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.contactEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.message.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
-      const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
-      const matchesCategory = categoryFilter === 'all' || ticket.category === categoryFilter;
-
-      // Date filtering
-      const ticketDate = new Date(ticket.createdAt);
-      const matchesDateFrom = !dateFromFilter || ticketDate >= new Date(dateFromFilter + 'T00:00:00');
-      const matchesDateTo = !dateToFilter || ticketDate <= new Date(dateToFilter + 'T23:59:59');
-
-      return matchesSearch && matchesStatus && matchesPriority && matchesCategory && matchesDateFrom && matchesDateTo;
-    });
-
-    // Sort based on user selection
-    filtered.sort((a, b) => {
-      // Apply sort order based on user selection
-      const aTime = new Date(a.createdAt).getTime();
-      const bTime = new Date(b.createdAt).getTime();
-
-      if (sortOrder === 'newest') {
-        return bTime - aTime; // Newer first
-      } else {
-        return aTime - bTime; // Older first
-      }
-    });
-
-    setFilteredTickets(filtered);
-  };
-
-  const updateTicketStatus = async (ticketId: string, newStatus: SupportTicket['status']) => {
-    try {
-      const { error } = await supabase
-        .from('support_tickets')
-        .update({
-          status: newStatus === 'pending' ? 'open' : newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', ticketId);
-
-      if (error) throw error;
-
-      const updatedTickets = tickets.map(ticket =>
-        ticket.id === ticketId
-          ? { ...ticket, status: newStatus, updatedAt: new Date().toISOString() }
-          : ticket
-      );
-      setTickets(updatedTickets);
-      showToast('success', 'Estado Actualizado', 'El estado del ticket ha sido actualizado', 3000);
-    } catch (error) {
-      console.error('Error updating ticket status:', error);
-      showToast('error', 'Error', 'No se pudo actualizar el estado del ticket', 3000);
-    }
-  };
-
-  const handleViewTicket = (ticket: SupportTicket) => {
-    setSelectedTicket(ticket);
-    setShowDetailModal(true);
-  };
-
-  const handleRespondToTicket = (ticket: SupportTicket) => {
-    setSelectedTicket(ticket);
-    setResponseText(ticket.response || '');
-    setAdminNotes(ticket.adminNotes || '');
-    setShowResponseModal(true);
-  };
-
-  const saveResponse = async () => {
-    if (!selectedTicket) return;
-
-    try {
-      const { error } = await supabase
-        .from('support_tickets')
-        .update({
-          response: responseText,
-          response_date: new Date().toISOString(),
-          admin_notes: adminNotes,
-          status: 'resolved',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedTicket.id);
-
-      if (error) throw error;
-
-      const updatedTickets = tickets.map(ticket =>
-        ticket.id === selectedTicket.id
-          ? {
-              ...ticket,
-              response: responseText,
-              responseDate: new Date().toISOString(),
-              adminNotes: adminNotes,
-              status: 'resolved' as const,
-              updatedAt: new Date().toISOString()
-            }
-          : ticket
-      );
-
-      setTickets(updatedTickets);
-      showToast('success', 'Respuesta Enviada', 'La respuesta ha sido enviada al cliente', 3000);
-      setShowResponseModal(false);
-      setSelectedTicket(null);
-      setResponseText('');
-      setAdminNotes('');
-    } catch (error) {
-      console.error('Error saving response:', error);
-      showToast('error', 'Error', 'No se pudo enviar la respuesta', 3000);
-    }
-  };
-
-  const deleteTicket = async (ticketId: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este ticket? Esta acción no se puede deshacer.')) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('support_tickets')
-        .delete()
-        .eq('id', ticketId);
-
-      if (error) throw error;
-
-      const updatedTickets = tickets.filter(ticket => ticket.id !== ticketId);
-      setTickets(updatedTickets);
-      showToast('success', 'Ticket Eliminado', 'El ticket ha sido eliminado correctamente', 3000);
-    } catch (error) {
-      console.error('Error deleting ticket:', error);
-      showToast('error', 'Error', 'No se pudo eliminar el ticket', 3000);
-    }
-  };
-
-  const getStatusBadge = (status: SupportTicket['status']) => {
+  const getStatusBadge = useCallback((status: SupportTicket['status']) => {
     switch (status) {
       case 'pending':
         return <Badge variant="warning">Pendiente</Badge>;
@@ -270,9 +149,9 @@ export const SupportTicketsManagement: React.FC = () => {
       default:
         return <Badge variant="gray">Desconocido</Badge>;
     }
-  };
+  }, []);
 
-  const getPriorityBadge = (priority: string) => {
+  const getPriorityBadge = useCallback((priority: string) => {
     switch (priority) {
       case 'urgent':
         return <Badge variant="error">Urgente</Badge>;
@@ -285,29 +164,326 @@ export const SupportTicketsManagement: React.FC = () => {
       default:
         return <Badge variant="gray">Media</Badge>;
     }
-  };
+  }, []);
 
-  const getCategoryName = (category: string) => {
-    const categories: { [key: string]: string } = {
-      general: 'Consulta General',
-      technical: 'Problema Técnico',
-      billing: 'Facturación',
-      feature: 'Solicitud de Función',
-      account: 'Cuenta y Configuración',
-      other: 'Otro'
+  const buildTicketsQuery = useCallback(() => {
+    // Traemos solo campos necesarios + join restaurants(name)
+    let q = supabase
+      .from('support_tickets')
+      .select(
+        `
+        id,
+        restaurant_id,
+        subject,
+        category,
+        priority,
+        message,
+        contact_email,
+        contact_phone,
+        status,
+        created_at,
+        updated_at,
+        response,
+        response_date,
+        admin_notes,
+        restaurants ( name )
+      `,
+        { count: 'exact' }
+      );
+
+    // Search (subject, message, contact_email, restaurants.name)
+    const term = searchTerm.trim();
+    if (term) {
+      const escaped = term.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      const pattern = `%${escaped}%`;
+      // Nota: el filtro sobre restaurants.name funciona en PostgREST con embedded; si en tu proyecto no,
+      // te preparo alternativa con view/RPC.
+      q = q.or(
+        [
+          `subject.ilike.${pattern}`,
+          `message.ilike.${pattern}`,
+          `contact_email.ilike.${pattern}`,
+          `restaurants.name.ilike.${pattern}`,
+        ].join(',')
+      );
+    }
+
+    // Filters
+    if (statusFilter !== 'all') {
+      // DB usa open para pending
+      q = q.eq('status', mapUiStatusToDb(statusFilter as SupportTicket['status']));
+    }
+    if (priorityFilter !== 'all') q = q.eq('priority', priorityFilter);
+    if (categoryFilter !== 'all') q = q.eq('category', categoryFilter);
+
+    // Date filters (created_at)
+    if (dateFromFilter) {
+      q = q.gte('created_at', new Date(dateFromFilter + 'T00:00:00.000Z').toISOString());
+    }
+    if (dateToFilter) {
+      q = q.lte('created_at', new Date(dateToFilter + 'T23:59:59.999Z').toISOString());
+    }
+
+    // Sort
+    q = q.order('created_at', { ascending: sortOrder === 'oldest' });
+
+    return q;
+  }, [searchTerm, statusFilter, priorityFilter, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
+
+  const loadTicketsPage = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      const { data, error, count } = await buildTicketsQuery().range(from, to);
+
+      if (error) throw error;
+
+      const formatted = (data || []).map((ticket: any): SupportTicket => ({
+        id: ticket.id,
+        restaurantId: ticket.restaurant_id,
+        restaurantName: ticket.restaurants?.name || 'Restaurante Desconocido',
+        subject: ticket.subject,
+        category: ticket.category,
+        priority: ticket.priority,
+        message: ticket.message,
+        contactEmail: ticket.contact_email,
+        contactPhone: ticket.contact_phone || '',
+        status: mapDbStatusToUi(ticket.status),
+        createdAt: ticket.created_at,
+        updatedAt: ticket.updated_at,
+        response: ticket.response,
+        responseDate: ticket.response_date,
+        adminNotes: ticket.admin_notes,
+      }));
+
+      setTickets(formatted);
+      setTotalCount(count || 0);
+    } catch (error) {
+      console.error('Error loading tickets:', error);
+      showToast('error', 'Error', 'No se pudieron cargar los tickets de soporte', 3000);
+    } finally {
+      setLoading(false);
+    }
+  }, [buildTicketsQuery, page, showToast]);
+
+  const loadGlobalStats = useCallback(async () => {
+    try {
+      setLoadingStats(true);
+
+      // Stats globales reales: 5 counts sin traer filas (head: true)
+      const totalReq = supabase.from('support_tickets').select('id', { count: 'exact', head: true });
+
+      const pendingReq = supabase
+        .from('support_tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'open');
+
+      const inProgressReq = supabase
+        .from('support_tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'in_progress');
+
+      const resolvedReq = supabase
+        .from('support_tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'resolved');
+
+      const urgentReq = supabase
+        .from('support_tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('priority', 'urgent');
+
+      const [totalRes, pendingRes, inProgRes, resolvedRes, urgentRes] = await Promise.all([
+        totalReq,
+        pendingReq,
+        inProgressReq,
+        resolvedReq,
+        urgentReq,
+      ]);
+
+      setGlobalStats({
+        total: totalRes.count || 0,
+        pending: pendingRes.count || 0,
+        inProgress: inProgRes.count || 0,
+        resolved: resolvedRes.count || 0,
+        urgent: urgentRes.count || 0,
+      });
+    } catch (error) {
+      console.error('Error loading global stats:', error);
+      showToast('error', 'Error', 'No se pudieron cargar las estadísticas globales', 2500);
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [showToast]);
+
+  // Carga inicial + realtime
+  useEffect(() => {
+    loadGlobalStats();
+    loadTicketsPage();
+
+    const channel = supabase
+      .channel('support_tickets_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'support_tickets' },
+        async () => {
+          // Refrescamos página actual + stats globales
+          await Promise.all([loadTicketsPage(), loadGlobalStats()]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    return categories[category] || category;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const stats = {
-    total: tickets.length,
-    pending: tickets.filter(t => t.status === 'pending').length,
-    inProgress: tickets.filter(t => t.status === 'in_progress').length,
-    resolved: tickets.filter(t => t.status === 'resolved').length,
-    urgent: tickets.filter(t => t.priority === 'urgent').length,
-  };
+  // Recarga cuando cambian página o filtros (debounced)
+  useEffect(() => {
+    loadTicketsPage();
+  }, [loadTicketsPage]);
 
-  if (loading) {
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadTicketsPage(), loadGlobalStats()]);
+    showToast('success', 'Actualizado', 'Tickets actualizados correctamente', 2000);
+  }, [loadGlobalStats, loadTicketsPage, showToast]);
+
+  const updateTicketStatus = useCallback(
+    async (ticketId: string, newStatus: SupportTicket['status']) => {
+      try {
+        const { error } = await supabase
+          .from('support_tickets')
+          .update({
+            status: mapUiStatusToDb(newStatus),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ticketId);
+
+        if (error) throw error;
+
+        // update local (página actual)
+        setTickets(prev =>
+          prev.map(t => (t.id === ticketId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t))
+        );
+
+        showToast('success', 'Estado Actualizado', 'El estado del ticket ha sido actualizado', 2500);
+
+        // stats globales pueden cambiar
+        loadGlobalStats();
+      } catch (error) {
+        console.error('Error updating ticket status:', error);
+        showToast('error', 'Error', 'No se pudo actualizar el estado del ticket', 3000);
+      }
+    },
+    [loadGlobalStats, showToast]
+  );
+
+  const handleViewTicket = useCallback((ticket: SupportTicket) => {
+    setSelectedTicket(ticket);
+    setShowDetailModal(true);
+  }, []);
+
+  const handleRespondToTicket = useCallback((ticket: SupportTicket) => {
+    setSelectedTicket(ticket);
+    setResponseText(ticket.response || '');
+    setAdminNotes(ticket.adminNotes || '');
+    setShowResponseModal(true);
+  }, []);
+
+  const saveResponse = useCallback(async () => {
+    if (!selectedTicket) return;
+
+    try {
+      const nowIso = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('support_tickets')
+        .update({
+          response: responseText,
+          response_date: nowIso,
+          admin_notes: adminNotes,
+          status: 'resolved',
+          updated_at: nowIso,
+        })
+        .eq('id', selectedTicket.id);
+
+      if (error) throw error;
+
+      // Update local page
+      setTickets(prev =>
+        prev.map(t =>
+          t.id === selectedTicket.id
+            ? {
+                ...t,
+                response: responseText,
+                responseDate: nowIso,
+                adminNotes,
+                status: 'resolved',
+                updatedAt: nowIso,
+              }
+            : t
+        )
+      );
+
+      showToast('success', 'Respuesta Enviada', 'La respuesta ha sido enviada al cliente', 2500);
+
+      setShowResponseModal(false);
+      setSelectedTicket(null);
+      setResponseText('');
+      setAdminNotes('');
+
+      loadGlobalStats();
+    } catch (error) {
+      console.error('Error saving response:', error);
+      showToast('error', 'Error', 'No se pudo enviar la respuesta', 3000);
+    }
+  }, [adminNotes, loadGlobalStats, responseText, selectedTicket, showToast]);
+
+  const deleteTicket = useCallback(
+    async (ticketId: string) => {
+      if (!confirm('¿Estás seguro de que quieres eliminar este ticket? Esta acción no se puede deshacer.')) return;
+
+      try {
+        const { error } = await supabase.from('support_tickets').delete().eq('id', ticketId);
+        if (error) throw error;
+
+        // Si borras, recarga página por si se quedó vacía
+        showToast('success', 'Ticket Eliminado', 'El ticket ha sido eliminado correctamente', 2500);
+
+        await Promise.all([loadTicketsPage(), loadGlobalStats()]);
+      } catch (error) {
+        console.error('Error deleting ticket:', error);
+        showToast('error', 'Error', 'No se pudo eliminar el ticket', 3000);
+      }
+    },
+    [loadGlobalStats, loadTicketsPage, showToast]
+  );
+
+  const clearFilters = useCallback(() => {
+    setSearchInput('');
+    setSearchTerm('');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setCategoryFilter('all');
+    setDateFromFilter('');
+    setDateToFilter('');
+    setSortOrder('newest');
+  }, []);
+
+  const showClear =
+    Boolean(searchInput.trim()) ||
+    statusFilter !== 'all' ||
+    priorityFilter !== 'all' ||
+    categoryFilter !== 'all' ||
+    Boolean(dateFromFilter) ||
+    Boolean(dateToFilter) ||
+    sortOrder !== 'newest';
+
+  if (loading && tickets.length === 0) {
     return (
       <div className="p-6 w-full min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -322,15 +498,17 @@ export const SupportTicketsManagement: React.FC = () => {
     <div className="p-6 w-full min-h-screen bg-gray-50">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Gestión de Tickets de Soporte</h1>
+
         <div className="flex items-center gap-4">
           <div className="text-sm text-gray-500">
-            {filteredTickets.length} de {tickets.length} tickets
+            Mostrando {tickets.length} · Total global: {loadingStats ? '—' : globalStats.total}
           </div>
+
           <Button
             variant="outline"
             size="sm"
             icon={RefreshCw}
-            onClick={loadTickets}
+            onClick={refreshAll}
             disabled={loading}
             className={loading ? 'animate-spin' : ''}
           >
@@ -339,14 +517,14 @@ export const SupportTicketsManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards (GLOBAL) */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
             <MessageSquare className="h-8 w-8 text-blue-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Tickets</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.total}</p>
+              <p className="text-2xl font-semibold text-gray-900">{loadingStats ? '—' : globalStats.total}</p>
             </div>
           </div>
         </div>
@@ -356,7 +534,7 @@ export const SupportTicketsManagement: React.FC = () => {
             <Clock className="h-8 w-8 text-yellow-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Pendientes</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.pending}</p>
+              <p className="text-2xl font-semibold text-gray-900">{loadingStats ? '—' : globalStats.pending}</p>
             </div>
           </div>
         </div>
@@ -366,7 +544,7 @@ export const SupportTicketsManagement: React.FC = () => {
             <HelpCircle className="h-8 w-8 text-blue-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">En Progreso</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.inProgress}</p>
+              <p className="text-2xl font-semibold text-gray-900">{loadingStats ? '—' : globalStats.inProgress}</p>
             </div>
           </div>
         </div>
@@ -376,7 +554,7 @@ export const SupportTicketsManagement: React.FC = () => {
             <CheckCircle className="h-8 w-8 text-green-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Resueltos</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.resolved}</p>
+              <p className="text-2xl font-semibold text-gray-900">{loadingStats ? '—' : globalStats.resolved}</p>
             </div>
           </div>
         </div>
@@ -386,7 +564,7 @@ export const SupportTicketsManagement: React.FC = () => {
             <AlertTriangle className="h-8 w-8 text-red-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Urgentes</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.urgent}</p>
+              <p className="text-2xl font-semibold text-gray-900">{loadingStats ? '—' : globalStats.urgent}</p>
             </div>
           </div>
         </div>
@@ -399,12 +577,15 @@ export const SupportTicketsManagement: React.FC = () => {
           <input
             type="text"
             placeholder="Buscar por asunto, restaurante, email o mensaje..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
+          {searchInput !== searchTerm && (
+            <p className="text-xs text-gray-500 mt-1">Buscando…</p>
+          )}
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-500" />
@@ -479,18 +660,10 @@ export const SupportTicketsManagement: React.FC = () => {
           </select>
         </div>
 
-        {(dateFromFilter || dateToFilter || statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all' || searchTerm) && (
+        {showClear && (
           <div className="flex justify-end">
             <button
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('all');
-                setPriorityFilter('all');
-                setCategoryFilter('all');
-                setDateFromFilter('');
-                setDateToFilter('');
-                setSortOrder('newest');
-              }}
+              onClick={clearFilters}
               className="text-sm text-blue-600 hover:text-blue-700 font-medium"
             >
               Limpiar filtros
@@ -499,18 +672,55 @@ export const SupportTicketsManagement: React.FC = () => {
         )}
       </div>
 
+      {/* Pagination header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+        <div className="text-sm text-gray-600">
+          Total global: <strong>{loadingStats ? '—' : globalStats.total}</strong> · Mostrando{' '}
+          <strong>
+            {totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
+          </strong>{' '}
+          –{' '}
+          <strong>{Math.min(page * PAGE_SIZE, totalCount)}</strong> de <strong>{totalCount}</strong> (resultado filtrado)
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            icon={ChevronLeft}
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1 || loading}
+          >
+            Anterior
+          </Button>
+          <div className="text-sm text-gray-700">
+            Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={ChevronRight}
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages || loading}
+          >
+            Siguiente
+          </Button>
+        </div>
+      </div>
+
       {/* Tickets Table */}
-      {filteredTickets.length === 0 ? (
+      {tickets.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <HelpCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {tickets.length === 0 ? 'No hay tickets de soporte' : 'No se encontraron tickets'}
+            {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all' || dateFromFilter || dateToFilter
+              ? 'No se encontraron tickets'
+              : 'No hay tickets de soporte'}
           </h3>
           <p className="text-gray-600">
-            {tickets.length === 0 
-              ? 'Los tickets de soporte aparecerán aquí cuando los restaurantes envíen consultas.'
-              : 'Intenta con diferentes términos de búsqueda o filtros.'
-            }
+            {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all' || dateFromFilter || dateToFilter
+              ? 'Intenta con diferentes términos de búsqueda o filtros.'
+              : 'Los tickets de soporte aparecerán aquí cuando los restaurantes envíen consultas.'}
           </p>
         </div>
       ) : (
@@ -545,25 +755,26 @@ export const SupportTicketsManagement: React.FC = () => {
                   </th>
                 </tr>
               </thead>
+
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTickets.map((ticket) => (
+                {tickets.map((ticket) => (
                   <tr key={ticket.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
                         <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
                           {ticket.subject}
                         </div>
-                        <div className="text-sm text-gray-500">
-                          ID: {ticket.id.slice(-8)}
-                        </div>
+                        <div className="text-sm text-gray-500">ID: {ticket.id.slice(-8)}</div>
                       </div>
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <Building className="w-4 h-4 text-gray-400 mr-2" />
                         <div className="text-sm text-gray-900">{ticket.restaurantName}</div>
                       </div>
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900 flex items-center">
                         <Mail className="w-3 h-3 mr-1" />
@@ -576,17 +787,15 @@ export const SupportTicketsManagement: React.FC = () => {
                         </div>
                       )}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {getCategoryName(ticket.category)}
-                      </div>
+                      <div className="text-sm text-gray-900">{getCategoryName(ticket.category)}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getPriorityBadge(ticket.priority)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(ticket.status)}
-                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap">{getPriorityBadge(ticket.priority)}</td>
+
+                    <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(ticket.status)}</td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center">
                         <Calendar className="w-3 h-3 mr-1" />
@@ -596,6 +805,7 @@ export const SupportTicketsManagement: React.FC = () => {
                         {new Date(ticket.createdAt).toLocaleTimeString()}
                       </div>
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <Button
@@ -605,7 +815,7 @@ export const SupportTicketsManagement: React.FC = () => {
                           onClick={() => handleViewTicket(ticket)}
                           title="Ver detalles"
                         />
-                        
+
                         {ticket.status === 'pending' && (
                           <Button
                             variant="ghost"
@@ -617,7 +827,7 @@ export const SupportTicketsManagement: React.FC = () => {
                             Tomar
                           </Button>
                         )}
-                        
+
                         {(ticket.status === 'pending' || ticket.status === 'in_progress') && (
                           <Button
                             variant="ghost"
@@ -629,7 +839,7 @@ export const SupportTicketsManagement: React.FC = () => {
                             Responder
                           </Button>
                         )}
-                        
+
                         <Button
                           variant="ghost"
                           size="sm"
@@ -660,7 +870,6 @@ export const SupportTicketsManagement: React.FC = () => {
       >
         {selectedTicket && (
           <div className="space-y-6">
-            {/* Header */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-semibold text-gray-900">{selectedTicket.subject}</h3>
@@ -674,7 +883,6 @@ export const SupportTicketsManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Restaurant and Contact Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h4 className="text-md font-medium text-gray-900 mb-3">Información del Restaurante</h4>
@@ -688,7 +896,7 @@ export const SupportTicketsManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
-              
+
               <div>
                 <h4 className="text-md font-medium text-gray-900 mb-3">Información de Contacto</h4>
                 <div className="space-y-2 text-sm">
@@ -706,7 +914,6 @@ export const SupportTicketsManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Message */}
             <div>
               <h4 className="text-md font-medium text-gray-900 mb-3">Mensaje</h4>
               <div className="bg-gray-50 rounded-lg p-4">
@@ -714,7 +921,6 @@ export const SupportTicketsManagement: React.FC = () => {
               </div>
             </div>
 
-            {/* Response */}
             {selectedTicket.response && (
               <div>
                 <h4 className="text-md font-medium text-gray-900 mb-3">Respuesta del Administrador</h4>
@@ -729,7 +935,6 @@ export const SupportTicketsManagement: React.FC = () => {
               </div>
             )}
 
-            {/* Admin Notes */}
             {selectedTicket.adminNotes && (
               <div>
                 <h4 className="text-md font-medium text-gray-900 mb-3">Notas Internas</h4>
@@ -739,7 +944,6 @@ export const SupportTicketsManagement: React.FC = () => {
               </div>
             )}
 
-            {/* Actions */}
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
               {selectedTicket.status === 'pending' && (
                 <Button
@@ -752,7 +956,7 @@ export const SupportTicketsManagement: React.FC = () => {
                   Marcar en Progreso
                 </Button>
               )}
-              
+
               {(selectedTicket.status === 'pending' || selectedTicket.status === 'in_progress') && (
                 <Button
                   onClick={() => {
@@ -763,7 +967,7 @@ export const SupportTicketsManagement: React.FC = () => {
                   Responder
                 </Button>
               )}
-              
+
               {selectedTicket.status === 'resolved' && (
                 <Button
                   onClick={() => {
@@ -802,9 +1006,7 @@ export const SupportTicketsManagement: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Respuesta al Cliente *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Respuesta al Cliente *</label>
               <textarea
                 value={responseText}
                 onChange={(e) => setResponseText(e.target.value)}
@@ -816,9 +1018,7 @@ export const SupportTicketsManagement: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Notas Internas (Opcional)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Notas Internas (Opcional)</label>
               <textarea
                 value={adminNotes}
                 onChange={(e) => setAdminNotes(e.target.value)}
@@ -826,16 +1026,6 @@ export const SupportTicketsManagement: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Notas internas para el equipo de soporte..."
               />
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="text-blue-800 font-medium mb-2">Información del ticket:</h4>
-              <div className="text-blue-700 text-sm space-y-1">
-                <p><strong>Mensaje original:</strong></p>
-                <p className="bg-white p-2 rounded border text-gray-700 text-xs max-h-20 overflow-y-auto">
-                  {selectedTicket.message}
-                </p>
-              </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
@@ -850,10 +1040,7 @@ export const SupportTicketsManagement: React.FC = () => {
               >
                 Cancelar
               </Button>
-              <Button
-                onClick={saveResponse}
-                disabled={!responseText.trim()}
-              >
+              <Button onClick={saveResponse} disabled={!responseText.trim()}>
                 Enviar Respuesta
               </Button>
             </div>
