@@ -22,40 +22,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [requirePasswordChange, setRequirePasswordChange] = useState(false);
+
   const loadingUserRef = useRef(false);
   const initializedRef = useRef(false);
   const authListenerRef = useRef<any>(null);
   const hasDataRef = useRef(false);
 
   useEffect(() => {
-    if (initializedRef.current) {
-      console.log('[AuthContext] Already initialized, skipping...');
-      return;
-    }
-
-    console.log('[AuthContext] Initializing auth context...');
+    if (initializedRef.current) return;
     initializedRef.current = true;
 
     const initializeAuth = async () => {
       try {
-        console.log('[AuthContext] Getting initial session...');
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error('[AuthContext] Error getting session:', error);
           setLoading(false);
           return;
         }
 
         if (session?.user) {
-          console.log('[AuthContext] Initial session found for:', session.user.email);
           await loadUserData(session.user.id);
         } else {
-          console.log('[AuthContext] No initial session found');
           setLoading(false);
         }
-      } catch (error) {
-        console.error('[AuthContext] Error initializing auth:', error);
+      } catch {
         setLoading(false);
       }
     };
@@ -64,16 +55,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     if (!authListenerRef.current) {
       const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-        console.log('[AuthContext] Auth state changed:', event);
-
         (async () => {
           if (event === 'SIGNED_IN' && session?.user) {
-            console.log('[AuthContext] User signed in, loading data...');
             if (!loadingUserRef.current) {
               await loadUserData(session.user.id);
             }
           } else if (event === 'SIGNED_OUT') {
-            console.log('[AuthContext] User signed out');
             setUser(null);
             setRestaurant(null);
             setIsAuthenticated(false);
@@ -81,9 +68,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             loadingUserRef.current = false;
             hasDataRef.current = false;
           } else if (event === 'TOKEN_REFRESHED') {
-            console.log('[AuthContext] Token refreshed, keeping current state');
+            // no-op
           } else if (event === 'USER_UPDATED') {
-            console.log('[AuthContext] User updated, keeping current state');
+            // no-op
           }
         })();
       });
@@ -92,27 +79,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     return () => {
-      console.log('[AuthContext] Cleanup called but keeping listener active');
+      // no-op (manteniendo listener activo como en tu versión)
     };
   }, []);
 
-
   const loadUserData = async (userId: string, retryCount = 0) => {
-    if (loadingUserRef.current) {
-      console.log('[AuthContext] loadUserData already in progress, skipping...');
-      return;
-    }
+    if (loadingUserRef.current) return;
 
     try {
-      console.log('[AuthContext] Loading user data for:', userId);
       loadingUserRef.current = true;
 
       if (!hasDataRef.current) {
         setLoading(true);
       }
-
-      console.log('[AuthContext] Querying users table...');
-      const startTime = Date.now();
 
       const { data: userData, error: userError } = await supabase
         .from('users')
@@ -120,20 +99,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         .eq('id', userId)
         .maybeSingle();
 
-      const duration = Date.now() - startTime;
-      console.log(`[AuthContext] Query completed in ${duration}ms`);
-
       if (userError) {
-        console.error('[AuthContext] Error loading user data:', userError);
-
         if (retryCount < 2) {
-          console.log('[AuthContext] Retrying... attempt', retryCount + 1);
           loadingUserRef.current = false;
           await new Promise(resolve => setTimeout(resolve, 500));
           return loadUserData(userId, retryCount + 1);
         }
 
-        console.error('[AuthContext] Max retries reached, signing out');
         await supabase.auth.signOut();
         setUser(null);
         setRestaurant(null);
@@ -145,7 +117,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (!userData) {
-        console.error('[AuthContext] No user data found for userId:', userId);
         await supabase.auth.signOut();
         setUser(null);
         setRestaurant(null);
@@ -156,50 +127,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      console.log('[AuthContext] User data loaded successfully:', userData.email, 'Role:', userData.role);
       setUser(userData as User);
       setIsAuthenticated(true);
       setRequirePasswordChange(userData.require_password_change || false);
 
       if (userData.role === 'restaurant_owner' && userData.restaurant_id) {
-        console.log('[AuthContext] Loading restaurant data for:', userData.restaurant_id);
-
         const { data: restaurantData, error: restaurantError } = await supabase
           .from('restaurants')
           .select('id, name, slug, domain, email, phone, address, logo_url, owner_name, owner_id, is_active, settings, created_at, updated_at, elevenlabs_agent_id')
           .eq('id', userData.restaurant_id)
           .maybeSingle();
 
-        if (restaurantError) {
-          console.error('[AuthContext] Error loading restaurant:', restaurantError);
-        } else if (restaurantData) {
-          console.log('[AuthContext] Restaurant data loaded:', restaurantData.name);
+        if (!restaurantError && restaurantData) {
           setRestaurant(restaurantData as Restaurant);
-        } else {
-          console.warn('[AuthContext] No restaurant data found');
         }
       }
 
       if (userData.role === 'superadmin') {
-        console.log('[AuthContext] User is superadmin, no restaurant needed');
         setRestaurant(null);
       }
 
-      console.log('[AuthContext] Auth context fully loaded');
       hasDataRef.current = true;
       setLoading(false);
       loadingUserRef.current = false;
-    } catch (error) {
-      console.error('[AuthContext] Unexpected error loading user data:', error);
-
+    } catch {
       if (retryCount < 2) {
-        console.log('[AuthContext] Retrying after unexpected error... attempt', retryCount + 1);
         loadingUserRef.current = false;
         await new Promise(resolve => setTimeout(resolve, 500));
         return loadUserData(userId, retryCount + 1);
       }
 
-      console.error('[AuthContext] Max retries reached after unexpected error, signing out');
       await supabase.auth.signOut();
       setUser(null);
       setRestaurant(null);
@@ -226,8 +183,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       return { success: false, error: 'Error al iniciar sesión' };
-    } catch (error) {
-      console.error('Login error:', error);
+    } catch {
       return { success: false, error: 'Error al iniciar sesión' };
     }
   };
@@ -254,13 +210,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return { success: true };
     } catch (error: any) {
-      console.error('Change password error:', error);
-
-      if (error.message?.includes('weak') || error.message?.includes('easy to guess')) {
-        return { success: false, error: 'La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común (como "password123", "12345678", etc.)' };
+      if (error?.message?.includes('weak') || error?.message?.includes('easy to guess')) {
+        return {
+          success: false,
+          error: 'La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común (como "password123", "12345678", etc.)'
+        };
       }
 
-      return { success: false, error: error.message || 'Error al cambiar la contraseña' };
+      return { success: false, error: error?.message || 'Error al cambiar la contraseña' };
     }
   };
 
@@ -393,18 +350,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return { success: true };
     } catch (error: any) {
-      console.error('Register error:', error);
       await supabase.auth.signOut();
 
-      if (error.message?.includes('weak') || error.message?.includes('easy to guess')) {
+      if (error?.message?.includes('weak') || error?.message?.includes('easy to guess')) {
         return { success: false, error: 'La contraseña es débil. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas y números.' };
       }
 
-      if (error.message?.includes('duplicate') || error.message?.includes('already exists')) {
+      if (error?.message?.includes('duplicate') || error?.message?.includes('already exists')) {
         return { success: false, error: 'Ya existe una cuenta con este correo electrónico.' };
       }
 
-      return { success: false, error: error.message || 'Error al registrar. Por favor intenta nuevamente.' };
+      return { success: false, error: error?.message || 'Error al registrar. Por favor intenta nuevamente.' };
     }
   };
 
@@ -423,8 +379,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return { success: true };
     } catch (error: any) {
-      console.error('Password reset error:', error);
-      return { success: false, error: error.message || 'Error al solicitar recuperación' };
+      return { success: false, error: error?.message || 'Error al solicitar recuperación' };
     }
   };
 
@@ -436,8 +391,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsAuthenticated(false);
       hasDataRef.current = false;
       window.location.href = '/login';
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch {
       setUser(null);
       setRestaurant(null);
       setIsAuthenticated(false);
@@ -459,8 +413,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!error && restaurantData) {
         setRestaurant(restaurantData as Restaurant);
       }
-    } catch (error) {
-      console.error('[AuthContext] Error refreshing restaurant data:', error);
+    } catch {
+      // silenciado
     }
   };
 
