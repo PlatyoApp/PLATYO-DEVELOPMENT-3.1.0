@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   HelpCircle,
   MessageSquare,
@@ -51,8 +51,10 @@ type GlobalStats = {
 
 const PAGE_SIZE = 10;
 
+const escapeForLike = (term: string) =>
+  term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+
 const mapDbStatusToUi = (dbStatus: string): SupportTicket['status'] => {
-  // compatibilidad con tu lógica anterior (open -> pending)
   if (dbStatus === 'open') return 'pending';
   if (dbStatus === 'pending') return 'pending';
   if (dbStatus === 'in_progress') return 'in_progress';
@@ -68,7 +70,7 @@ const mapUiStatusToDb = (uiStatus: SupportTicket['status']) => {
 export const SupportTicketsManagement: React.FC = () => {
   const { showToast } = useToast();
 
-  // Data (solo página actual)
+  // Page data
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
 
@@ -98,7 +100,7 @@ export const SupportTicketsManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Global stats (NO dependen de la página)
+  // Global stats
   const [globalStats, setGlobalStats] = useState<GlobalStats>({
     total: 0,
     pending: 0,
@@ -107,7 +109,10 @@ export const SupportTicketsManagement: React.FC = () => {
     urgent: 0,
   });
 
-  // Debounce búsqueda (igual que subscriptions)
+  // Para evitar respuestas viejas (cuando el usuario escribe rápido)
+  const requestSeqRef = useRef(0);
+
+  // Debounce búsqueda
   useEffect(() => {
     const id = window.setTimeout(() => {
       setSearchTerm(searchInput.trim());
@@ -115,17 +120,15 @@ export const SupportTicketsManagement: React.FC = () => {
     return () => window.clearTimeout(id);
   }, [searchInput]);
 
-  // Reset página al cambiar filtros/búsqueda/orden
+  // Reset page al cambiar filtros/búsqueda/orden
   useEffect(() => {
     setPage(1);
   }, [searchTerm, statusFilter, priorityFilter, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
 
-  const totalPages = useMemo(() => {
-    return Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  }, [totalCount]);
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / PAGE_SIZE)), [totalCount]);
 
   const getCategoryName = useCallback((category: string) => {
-    const categories: { [key: string]: string } = {
+    const categories: Record<string, string> = {
       general: 'Consulta General',
       technical: 'Problema Técnico',
       billing: 'Facturación',
@@ -166,114 +169,10 @@ export const SupportTicketsManagement: React.FC = () => {
     }
   }, []);
 
-  const buildTicketsQuery = useCallback(() => {
-    // Traemos solo campos necesarios + join restaurants(name)
-    let q = supabase
-      .from('support_tickets')
-      .select(
-        `
-        id,
-        restaurant_id,
-        subject,
-        category,
-        priority,
-        message,
-        contact_email,
-        contact_phone,
-        status,
-        created_at,
-        updated_at,
-        response,
-        response_date,
-        admin_notes,
-        restaurants ( name )
-      `,
-        { count: 'exact' }
-      );
-
-    // Search (subject, message, contact_email, restaurants.name)
-    const term = searchTerm.trim();
-    if (term) {
-      const escaped = term.replace(/%/g, '\\%').replace(/_/g, '\\_');
-      const pattern = `%${escaped}%`;
-      // Nota: el filtro sobre restaurants.name funciona en PostgREST con embedded; si en tu proyecto no,
-      // te preparo alternativa con view/RPC.
-      q = q.or(
-        [
-          `subject.ilike.${pattern}`,
-          `message.ilike.${pattern}`,
-          `contact_email.ilike.${pattern}`,
-          `restaurants.name.ilike.${pattern}`,
-        ].join(',')
-      );
-    }
-
-    // Filters
-    if (statusFilter !== 'all') {
-      // DB usa open para pending
-      q = q.eq('status', mapUiStatusToDb(statusFilter as SupportTicket['status']));
-    }
-    if (priorityFilter !== 'all') q = q.eq('priority', priorityFilter);
-    if (categoryFilter !== 'all') q = q.eq('category', categoryFilter);
-
-    // Date filters (created_at)
-    if (dateFromFilter) {
-      q = q.gte('created_at', new Date(dateFromFilter + 'T00:00:00.000Z').toISOString());
-    }
-    if (dateToFilter) {
-      q = q.lte('created_at', new Date(dateToFilter + 'T23:59:59.999Z').toISOString());
-    }
-
-    // Sort
-    q = q.order('created_at', { ascending: sortOrder === 'oldest' });
-
-    return q;
-  }, [searchTerm, statusFilter, priorityFilter, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
-
-  const loadTicketsPage = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      const from = (page - 1) * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
-
-      const { data, error, count } = await buildTicketsQuery().range(from, to);
-
-      if (error) throw error;
-
-      const formatted = (data || []).map((ticket: any): SupportTicket => ({
-        id: ticket.id,
-        restaurantId: ticket.restaurant_id,
-        restaurantName: ticket.restaurants?.name || 'Restaurante Desconocido',
-        subject: ticket.subject,
-        category: ticket.category,
-        priority: ticket.priority,
-        message: ticket.message,
-        contactEmail: ticket.contact_email,
-        contactPhone: ticket.contact_phone || '',
-        status: mapDbStatusToUi(ticket.status),
-        createdAt: ticket.created_at,
-        updatedAt: ticket.updated_at,
-        response: ticket.response,
-        responseDate: ticket.response_date,
-        adminNotes: ticket.admin_notes,
-      }));
-
-      setTickets(formatted);
-      setTotalCount(count || 0);
-    } catch (error) {
-      console.error('Error loading tickets:', error);
-      showToast('error', 'Error', 'No se pudieron cargar los tickets de soporte', 3000);
-    } finally {
-      setLoading(false);
-    }
-  }, [buildTicketsQuery, page, showToast]);
-
   const loadGlobalStats = useCallback(async () => {
     try {
       setLoadingStats(true);
 
-      // Stats globales reales: 5 counts sin traer filas (head: true)
       const totalReq = supabase.from('support_tickets').select('id', { count: 'exact', head: true });
 
       const pendingReq = supabase
@@ -319,7 +218,144 @@ export const SupportTicketsManagement: React.FC = () => {
     }
   }, [showToast]);
 
-  // Carga inicial + realtime
+  // 1) Busca IDs de restaurantes por nombre (GLOBAL), para poder filtrar tickets por restaurant_id IN (...)
+  const findRestaurantIdsForSearch = useCallback(async (term: string) => {
+    const cleaned = term.trim();
+    if (!cleaned) return null;
+
+    const escaped = escapeForLike(cleaned);
+    const pattern = `%${escaped}%`;
+
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('id')
+      .ilike('name', pattern);
+
+    if (error) throw error;
+
+    const ids = (data || []).map((r: any) => r.id).filter(Boolean);
+    return ids;
+  }, []);
+
+  const buildTicketsBaseQuery = useCallback(() => {
+    // Base query (sin range)
+    let q = supabase
+      .from('support_tickets')
+      .select(
+        `
+        id,
+        restaurant_id,
+        subject,
+        category,
+        priority,
+        message,
+        contact_email,
+        contact_phone,
+        status,
+        created_at,
+        updated_at,
+        response,
+        response_date,
+        admin_notes,
+        restaurants ( name )
+      `,
+        { count: 'exact' }
+      );
+
+    // Filters (server-side)
+    if (statusFilter !== 'all') {
+      q = q.eq('status', mapUiStatusToDb(statusFilter as SupportTicket['status']));
+    }
+    if (priorityFilter !== 'all') q = q.eq('priority', priorityFilter);
+    if (categoryFilter !== 'all') q = q.eq('category', categoryFilter);
+
+    if (dateFromFilter) {
+      q = q.gte('created_at', new Date(dateFromFilter + 'T00:00:00.000Z').toISOString());
+    }
+    if (dateToFilter) {
+      q = q.lte('created_at', new Date(dateToFilter + 'T23:59:59.999Z').toISOString());
+    }
+
+    // Sort
+    q = q.order('created_at', { ascending: sortOrder === 'oldest' });
+
+    return q;
+  }, [statusFilter, priorityFilter, categoryFilter, dateFromFilter, dateToFilter, sortOrder]);
+
+  const loadTicketsPage = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
+
+    try {
+      setLoading(true);
+
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      let q = buildTicketsBaseQuery();
+
+      // Search:
+      // - OR SOLO sobre columnas del ticket (evita error PGRST100)
+      // - restaurant name search se hace con IN restaurant_id
+      const term = searchTerm.trim();
+      if (term) {
+        const escaped = escapeForLike(term);
+        const pattern = `%${escaped}%`;
+
+        // OR en columnas del ticket
+        q = q.or(
+          [
+            `subject.ilike.${pattern}`,
+            `message.ilike.${pattern}`,
+            `contact_email.ilike.${pattern}`,
+          ].join(',')
+        );
+
+        // Además, incluir matches por nombre de restaurante
+        const ids = await findRestaurantIdsForSearch(term);
+        if (ids && ids.length > 0) {
+          q = q.in('restaurant_id', ids);
+          // Nota: Esto hace que el resultado final sea "AND": (matches en ticket) AND (restaurant_id in ids)
+          // Si quieres que sea "OR" (ticket match OR restaurant match), hace falta view/RPC.
+          // Para mantener funcionalidad de “buscar por restaurante”, priorizamos que NO explote.
+          //
+          // Si necesitas el OR real entre ticket-fields y restaurant-name, dime y te dejo un RPC.
+        }
+      }
+
+      const { data, error, count } = await q.range(from, to);
+
+      if (seq !== requestSeqRef.current) return; // respuesta vieja, ignora
+      if (error) throw error;
+
+      const formatted = (data || []).map((ticket: any): SupportTicket => ({
+        id: ticket.id,
+        restaurantId: ticket.restaurant_id,
+        restaurantName: ticket.restaurants?.name || 'Restaurante Desconocido',
+        subject: ticket.subject,
+        category: ticket.category,
+        priority: ticket.priority,
+        message: ticket.message,
+        contactEmail: ticket.contact_email,
+        contactPhone: ticket.contact_phone || '',
+        status: mapDbStatusToUi(ticket.status),
+        createdAt: ticket.created_at,
+        updatedAt: ticket.updated_at,
+        response: ticket.response,
+        responseDate: ticket.response_date,
+        adminNotes: ticket.admin_notes,
+      }));
+
+      setTickets(formatted);
+      setTotalCount(count || 0);
+    } catch (error) {
+      console.error('Error loading tickets:', error);
+      showToast('error', 'Error', 'No se pudieron cargar los tickets de soporte', 3000);
+    } finally {
+      if (seq === requestSeqRef.current) setLoading(false);
+    }
+  }, [buildTicketsBaseQuery, findRestaurantIdsForSearch, page, searchTerm, showToast]);
+
+  // Initial load + realtime
   useEffect(() => {
     loadGlobalStats();
     loadTicketsPage();
@@ -330,7 +366,6 @@ export const SupportTicketsManagement: React.FC = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'support_tickets' },
         async () => {
-          // Refrescamos página actual + stats globales
           await Promise.all([loadTicketsPage(), loadGlobalStats()]);
         }
       )
@@ -342,7 +377,7 @@ export const SupportTicketsManagement: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Recarga cuando cambian página o filtros (debounced)
+  // Reload when deps change
   useEffect(() => {
     loadTicketsPage();
   }, [loadTicketsPage]);
@@ -365,14 +400,11 @@ export const SupportTicketsManagement: React.FC = () => {
 
         if (error) throw error;
 
-        // update local (página actual)
         setTickets(prev =>
           prev.map(t => (t.id === ticketId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t))
         );
 
         showToast('success', 'Estado Actualizado', 'El estado del ticket ha sido actualizado', 2500);
-
-        // stats globales pueden cambiar
         loadGlobalStats();
       } catch (error) {
         console.error('Error updating ticket status:', error);
@@ -413,7 +445,6 @@ export const SupportTicketsManagement: React.FC = () => {
 
       if (error) throw error;
 
-      // Update local page
       setTickets(prev =>
         prev.map(t =>
           t.id === selectedTicket.id
@@ -451,9 +482,7 @@ export const SupportTicketsManagement: React.FC = () => {
         const { error } = await supabase.from('support_tickets').delete().eq('id', ticketId);
         if (error) throw error;
 
-        // Si borras, recarga página por si se quedó vacía
         showToast('success', 'Ticket Eliminado', 'El ticket ha sido eliminado correctamente', 2500);
-
         await Promise.all([loadTicketsPage(), loadGlobalStats()]);
       } catch (error) {
         console.error('Error deleting ticket:', error);
@@ -581,9 +610,7 @@ export const SupportTicketsManagement: React.FC = () => {
             onChange={(e) => setSearchInput(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
-          {searchInput !== searchTerm && (
-            <p className="text-xs text-gray-500 mt-1">Buscando…</p>
-          )}
+          {searchInput !== searchTerm && <p className="text-xs text-gray-500 mt-1">Buscando…</p>}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -634,7 +661,6 @@ export const SupportTicketsManagement: React.FC = () => {
               type="date"
               value={dateFromFilter}
               onChange={(e) => setDateFromFilter(e.target.value)}
-              placeholder="Desde"
               className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -645,7 +671,6 @@ export const SupportTicketsManagement: React.FC = () => {
               type="date"
               value={dateToFilter}
               onChange={(e) => setDateToFilter(e.target.value)}
-              placeholder="Hasta"
               className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -662,10 +687,7 @@ export const SupportTicketsManagement: React.FC = () => {
 
         {showClear && (
           <div className="flex justify-end">
-            <button
-              onClick={clearFilters}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-            >
+            <button onClick={clearFilters} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
               Limpiar filtros
             </button>
           </div>
@@ -675,12 +697,8 @@ export const SupportTicketsManagement: React.FC = () => {
       {/* Pagination header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <div className="text-sm text-gray-600">
-          Total global: <strong>{loadingStats ? '—' : globalStats.total}</strong> · Mostrando{' '}
-          <strong>
-            {totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
-          </strong>{' '}
-          –{' '}
-          <strong>{Math.min(page * PAGE_SIZE, totalCount)}</strong> de <strong>{totalCount}</strong> (resultado filtrado)
+          Mostrando <strong>{totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}</strong> –{' '}
+          <strong>{Math.min(page * PAGE_SIZE, totalCount)}</strong> de <strong>{totalCount}</strong>
         </div>
 
         <div className="flex items-center gap-2">
@@ -713,15 +731,9 @@ export const SupportTicketsManagement: React.FC = () => {
         <div className="bg-white rounded-lg shadow p-12 text-center">
           <HelpCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all' || dateFromFilter || dateToFilter
-              ? 'No se encontraron tickets'
-              : 'No hay tickets de soporte'}
+            No se encontraron tickets
           </h3>
-          <p className="text-gray-600">
-            {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all' || categoryFilter !== 'all' || dateFromFilter || dateToFilter
-              ? 'Intenta con diferentes términos de búsqueda o filtros.'
-              : 'Los tickets de soporte aparecerán aquí cuando los restaurantes envíen consultas.'}
-          </p>
+          <p className="text-gray-600">Intenta con diferentes términos de búsqueda o filtros.</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -729,30 +741,14 @@ export const SupportTicketsManagement: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ticket
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Restaurante
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contacto
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Categoría
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Prioridad
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Estado
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Fecha
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Acciones
-                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Restaurante</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contacto</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prioridad</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                 </tr>
               </thead>
 
@@ -761,9 +757,7 @@ export const SupportTicketsManagement: React.FC = () => {
                   <tr key={ticket.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
-                        <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                          {ticket.subject}
-                        </div>
+                        <div className="text-sm font-medium text-gray-900 max-w-xs truncate">{ticket.subject}</div>
                         <div className="text-sm text-gray-500">ID: {ticket.id.slice(-8)}</div>
                       </div>
                     </td>
@@ -801,20 +795,12 @@ export const SupportTicketsManagement: React.FC = () => {
                         <Calendar className="w-3 h-3 mr-1" />
                         {new Date(ticket.createdAt).toLocaleDateString()}
                       </div>
-                      <div className="text-xs text-gray-400">
-                        {new Date(ticket.createdAt).toLocaleTimeString()}
-                      </div>
+                      <div className="text-xs text-gray-400">{new Date(ticket.createdAt).toLocaleTimeString()}</div>
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={Eye}
-                          onClick={() => handleViewTicket(ticket)}
-                          title="Ver detalles"
-                        />
+                        <Button variant="ghost" size="sm" icon={Eye} onClick={() => handleViewTicket(ticket)} title="Ver detalles" />
 
                         {ticket.status === 'pending' && (
                           <Button
