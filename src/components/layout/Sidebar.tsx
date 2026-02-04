@@ -195,9 +195,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               })}
             </ul>
 
-            {subscriptionLoaded && (
-
-            )}
           </div>
         </nav>
       </aside>
