@@ -62,12 +62,19 @@ export const RestaurantAnalytics: React.FC = () => {
   }, [startDate, endDate]);
 
   /** ✅ Inicializa HOY antes de cargar (evita cargar “todo” por accidente) */
-  useEffect(() => {
-    if (!restaurant?.id) return;
-    const todayStr = new Date().toISOString().split('T')[0];
-    setStartDate(todayStr);
-    setEndDate(todayStr);
-  }, [restaurant?.id]);
+useEffect(() => {
+  if (!restaurant?.id) return;
+
+  const end = new Date();            // hoy
+  const start = new Date();
+  start.setDate(end.getDate() - 30); // últimos 30 días
+
+  const endStr = end.toISOString().split('T')[0];
+  const startStr = start.toISOString().split('T')[0];
+
+  setStartDate(startStr);
+  setEndDate(endStr);
+}, [restaurant?.id]);
 
   /**
    * Carga rápida: NO trae datos “pesados” para CSV.
