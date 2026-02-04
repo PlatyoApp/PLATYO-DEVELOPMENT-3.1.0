@@ -307,8 +307,6 @@ export const RestaurantDashboard: React.FC = () => {
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{t('statusSubscription')}</p>
             <Badge variant={currentSubscription?.status === 'active' ? 'success' : 'warning'}>
               {getCurrentPlanName()}
-              console.log('currentSubscription real:', currentSubscription);
-
             </Badge>
           </div>
           <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
