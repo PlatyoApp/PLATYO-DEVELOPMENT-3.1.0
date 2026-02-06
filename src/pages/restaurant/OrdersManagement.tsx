@@ -517,15 +517,14 @@ export const OrdersManagement: React.FC = () => {
   };
 
   const handleViewOrder = async (orderId: string) => {
-  setShowModal(true);
-  setSelectedOrder(null);
-  setLoadingOrderDetail(true);
-
-  // fetchOrderById NO acepta segundo parámetro
-  const full = await fetchOrderById(orderId);
-
-  setLoadingOrderDetail(false);
-  if (full) setSelectedOrder(full);
+    setShowModal(true);
+    setSelectedOrder(null);
+    setLoadingOrderDetail(true);
+  
+    const full = await fetchOrderById(orderId);
+  
+    setLoadingOrderDetail(false);
+    if (full) setSelectedOrder(full);
   };
 
 
