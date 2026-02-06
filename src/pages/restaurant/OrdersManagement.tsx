@@ -1902,9 +1902,9 @@ const handleEditOrderById = async (orderId: string) => {
     <div className="flex justify-between">
       <span>{t('deliveryLabel')}:</span>
       <span>
-        {selectedOrder.delivery_cost > 0
-          ? formatCurrency(selectedOrder.delivery_cost, currency)
-          : t('freeLabel')}
+      {selectedOrder.delivery_cost > 0
+        ? formatCurrency(selectedOrder.delivery_cost, currency)
+        : formatCurrency(0, currency)}
       </span>
     </div>
   )}
@@ -1914,7 +1914,6 @@ const handleEditOrderById = async (orderId: string) => {
     <span>{formatCurrency(selectedOrder.total, currency)}</span>
   </div>
 </div>
-
             </div>
 
             {selectedOrder.special_instructions && (
