@@ -55,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateToSettings, onToggleSi
                   <img
                     src={restaurant.logo_url}
                     alt={restaurant.name}
-                    className="h-50 w-auto max-w-[40px] rounded-xl object-contain flex-shrink-0 shadow-md"
+                    className="h-10 w-auto max-w-[40px] rounded-xl object-contain flex-shrink-0 shadow-md"
                   />
                 ) : (
                   <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
