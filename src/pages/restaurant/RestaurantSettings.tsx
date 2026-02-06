@@ -534,23 +534,23 @@ export const RestaurantSettings: React.FC = () => {
                   <div className="flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-6">
                     <div className="flex-shrink-0">
                       <div className="relative group">
-<div className="w-32 h-32 md:w-40 md:h-40 rounded-xl md:rounded-2xl border-2 md:border-4 border-gray-100 shadow-xl bg-gradient-to-br from-gray-50 to-white overflow-hidden flex items-center justify-center transition-transform group-hover:scale-105">
-  {formData.logo_url ? (
-    // Marco fijo + imagen contain (no recorta)
-    <div className="w-full h-full flex items-center justify-center">
-      <img
-        src={formData.logo_url}
-        alt="Logo"
-        className="max-w-full max-h-full object-contain"
-      />
-    </div>
-  ) : (
-    <div className="text-center p-2 md:p-4">
-      <Store className="w-12 h-12 md:w-16 md:h-16 text-gray-300 mx-auto mb-2" />
-      <p className="text-xs text-gray-400 font-medium">{t('no_logo')}</p>
-    </div>
-  )}
-</div>
+                        <div className="w-32 h-32 md:w-40 md:h-40 rounded-xl md:rounded-2xl border-2 md:border-4 border-gray-100 shadow-xl bg-gradient-to-br from-gray-50 to-white overflow-hidden flex items-center justify-center transition-transform group-hover:scale-105">
+                          {formData.logo_url ? (
+                            // Marco fijo + imagen contain (no recorta)
+                            <div className="w-full h-full flex items-center justify-center">
+                              <img
+                                src={formData.logo_url}
+                                alt="Logo"
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="text-center p-2 md:p-4">
+                              <Store className="w-12 h-12 md:w-16 md:h-16 text-gray-300 mx-auto mb-2" />
+                              <p className="text-xs text-gray-400 font-medium">{t('no_logo')}</p>
+                            </div>
+                          )}
+                        </div>
 
                         {formData.logo_url && (
                           <div className="absolute -top-2 -right-2 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
