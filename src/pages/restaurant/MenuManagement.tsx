@@ -1,5 +1,5 @@
 // src/pages/restaurant/MenuManagement.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Plus,
   Pencil as Edit,
@@ -79,9 +79,6 @@ export const MenuManagement: React.FC = () => {
     >()
   );
 
-  const makeCacheSignature = (restaurantId: string) =>
-    `${restaurantId}|p:${page}|cat:${selectedCategory}|s:${debouncedSearchTerm}`;
-
   // ====== State ======
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<ProductListItem[]>([]);
@@ -120,6 +117,11 @@ export const MenuManagement: React.FC = () => {
 
   // drag paging cooldown
   const dragPagingCooldownRef = useRef<number>(0);
+
+  const makeCacheSignature = useCallback(
+    (restaurantId: string) => `${restaurantId}|p:${page}|cat:${selectedCategory}|s:${debouncedSearchTerm}`,
+    [page, selectedCategory, debouncedSearchTerm]
+  );
 
   // ====== Debounce búsqueda ======
   useEffect(() => {
@@ -161,11 +163,9 @@ export const MenuManagement: React.FC = () => {
   const saveCache = (payload: CachePayload) => {
     if (!restaurant?.id) return;
 
-    // cache en memoria
     const sig = makeCacheSignature(restaurant.id);
     memoryCacheRef.current.set(sig, { ts: Date.now(), payload });
 
-    // cache en sessionStorage (best-effort)
     try {
       sessionStorage.setItem(
         cacheKey(restaurant.id),
@@ -182,22 +182,63 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
-  const invalidateCache = () => {
+  const invalidateCache = useCallback(() => {
     if (!restaurant?.id) return;
 
-    // limpia memoria
     const prefix = `${restaurant.id}|`;
     for (const key of memoryCacheRef.current.keys()) {
       if (key.startsWith(prefix)) memoryCacheRef.current.delete(key);
     }
 
-    // limpia sessionStorage
     try {
       sessionStorage.removeItem(cacheKey(restaurant.id));
     } catch {
       // ignore
     }
-  };
+  }, [restaurant?.id]);
+
+  /**
+   * ✅ NUEVO: refrescar SOLO categorías (rápido)
+   * Se usa cuando se crea una categoría en otra pantalla.
+   * No recarga productos ni toca paginación.
+   */
+  const refreshCategoriesOnly = useCallback(async () => {
+    if (!restaurant?.id) return;
+
+    const { data, error } = await supabase
+      .from('categories')
+      .select('id, name, icon')
+      .eq('restaurant_id', restaurant.id)
+      .eq('is_active', true);
+
+    if (error) {
+      console.error('[MenuManagement] refreshCategoriesOnly error:', error);
+      return;
+    }
+
+    setCategories((data as any) || []);
+  }, [restaurant?.id]);
+
+  /**
+   * ✅ NUEVO: escucha evento global disparado desde CategoriesManagement
+   * Esto evita el “se demora” por TTL/caché.
+   */
+  useEffect(() => {
+    const handler = async (e: any) => {
+      // si viene restaurantId, filtramos (por seguridad)
+      const eventRestaurantId = e?.detail?.restaurantId;
+      if (eventRestaurantId && restaurant?.id && eventRestaurantId !== restaurant.id) return;
+
+      // invalida cache para que no re-inyecte categorías viejas
+      invalidateCache();
+
+      // refresca categorías de inmediato
+      await refreshCategoriesOnly();
+    };
+
+    window.addEventListener('categories_updated', handler as any);
+    return () => window.removeEventListener('categories_updated', handler as any);
+  }, [restaurant?.id, invalidateCache, refreshCategoriesOnly]);
 
   // ====== Menú (server-side search + category + pagination) con cache ======
   useEffect(() => {
@@ -245,7 +286,6 @@ export const MenuManagement: React.FC = () => {
             totalProducts: cached.totalProducts ?? 0
           };
 
-          // rellena memoria
           const sig = makeCacheSignature(restaurant.id);
           memoryCacheRef.current.set(sig, { ts: cached.ts, payload });
 
@@ -265,7 +305,7 @@ export const MenuManagement: React.FC = () => {
 
     loadMenuData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurant?.id, page, selectedCategory, debouncedSearchTerm]);
+  }, [restaurant?.id, page, selectedCategory, debouncedSearchTerm, makeCacheSignature]);
 
   // Helper: construir query de productos (reutilizable para prefetch)
   const buildProductsQuery = async (pageToLoad: number) => {
@@ -274,7 +314,6 @@ export const MenuManagement: React.FC = () => {
     const from = (pageToLoad - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    // 2) Si hay filtro de categoría, obtenemos IDs desde tabla puente (robusto)
     let productIdsForCategory: string[] | null = null;
 
     if (selectedCategory !== 'all') {
@@ -292,7 +331,6 @@ export const MenuManagement: React.FC = () => {
       }
     }
 
-    // 3) Query base ligera
     let query = supabase
       .from('products')
       .select(
@@ -331,18 +369,15 @@ export const MenuManagement: React.FC = () => {
       .eq('restaurant_id', restaurant.id)
       .order('display_order', { ascending: true });
 
-    // 4) búsqueda server-side
     if (debouncedSearchTerm) {
       const s = debouncedSearchTerm.replace(/%/g, '\\%').replace(/_/g, '\\_');
       query = query.or(`name.ilike.%${s}%,description.ilike.%${s}%,sku.ilike.%${s}%`);
     }
 
-    // 5) filtro categoría por IDs
     if (productIdsForCategory) {
       query = query.in('id', productIdsForCategory);
     }
 
-    // 6) paginación
     const res = await query.range(from, to);
     return res;
   };
@@ -353,17 +388,18 @@ export const MenuManagement: React.FC = () => {
     setLoadingProducts(true);
 
     try {
-      // ✅ Paralelo: categorías + productos (elimina waterfall)
       const categoriesQuery = supabase
         .from('categories')
-        .select('id, name, icon') // ✅ payload menor
+        .select('id, name, icon')
         .eq('restaurant_id', restaurant.id)
         .eq('is_active', true);
 
       const productsQueryPromise = buildProductsQuery(page);
 
-      const [{ data: categoriesData, error: categoriesError }, { data: productsData, error: productsError, count }] =
-        await Promise.all([categoriesQuery, productsQueryPromise]);
+      const [
+        { data: categoriesData, error: categoriesError },
+        { data: productsData, error: productsError, count }
+      ] = await Promise.all([categoriesQuery, productsQueryPromise]);
 
       if (categoriesError) console.error('Error loading categories:', categoriesError);
       const safeCategories = (categoriesData as any) || [];
@@ -456,7 +492,7 @@ export const MenuManagement: React.FC = () => {
   // ====== Prefetch página siguiente (solo ALL sin búsqueda; acelera “Siguiente”) ======
   useEffect(() => {
     if (!restaurant?.id) return;
-    if (!shouldUseGlobalAllStats) return; // prefetch solo en escenario típico de navegación
+    if (!shouldUseGlobalAllStats) return;
     if (loadingProducts) return;
     if (page >= totalPages) return;
 
@@ -465,7 +501,6 @@ export const MenuManagement: React.FC = () => {
     const prefetch = async () => {
       const nextPage = page + 1;
 
-      // si ya está en memoria y fresco, no hacemos nada
       const sig = `${restaurant.id}|p:${nextPage}|cat:${selectedCategory}|s:${debouncedSearchTerm}`;
       const hit = memoryCacheRef.current.get(sig);
       if (hit && Date.now() - hit.ts < CACHE_TTL_MS) return;
@@ -481,14 +516,14 @@ export const MenuManagement: React.FC = () => {
         }));
 
         const payload: CachePayload = {
-          categories, // ya están en state
+          categories,
           products: productsWithCategory,
           totalProducts: count ?? totalProducts
         };
 
         memoryCacheRef.current.set(sig, { ts: Date.now(), payload });
       } catch {
-        // ignore prefetch errors
+        // ignore
       }
     };
 
@@ -893,7 +928,7 @@ export const MenuManagement: React.FC = () => {
     setDeleteConfirm({ show: true, productId: product.id, productName: product.name });
   };
 
-  // ====== Stats de página memoizadas (evita filters repetidos) ======
+  // ====== Stats de página memoizadas ======
   const pageStats = useMemo(() => {
     let active = 0;
     let out = 0;
@@ -1264,6 +1299,8 @@ export const MenuManagement: React.FC = () => {
               setEditingProductId(null);
               setEditingProduct(null);
             }}
+            // ✅ NUEVO: permite refrescar desde el form (botón actualizar / evento)
+            onRefreshCategories={refreshCategoriesOnly}
           />
         )}
       </Modal>
