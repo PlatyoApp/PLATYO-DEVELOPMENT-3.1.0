@@ -684,77 +684,9 @@ const handleEditOrderById = async (orderId: string) => {
   };
 
   // =============================
-  // 7) WhatsApp: needs detail => lazy (and keep behavior)
+  // WhatsApp al CLIENTE según estado
+  // (se usa SOLO al hacer click en el icono de mensaje)
   // =============================
-  const generateWhatsAppMessage = (order: Order) => {
-    const restaurantName = restaurant?.name || t('restaurantDefaultName');
-    const orderNumber = order.order_number;
-    const orderDate = new Date(order.created_at).toLocaleString();
-
-    let message = `*${t('newOrderTitle')} - ${restaurantName}*\n`;
-    message += `*${t('dateLabel')}:* ${orderDate}\n`;
-    message += `*${t('orderNumberLabel')}:* ${orderNumber}\n\n`;
-
-    message += `*${t('customerSectionTitle')}:*\n`;
-    message += `- *${t('nameLabel')}:* ${order.customer.name}\n`;
-    message += `- *${t('phone_label')}:* ${order.customer.phone}\n`;
-    if (order.customer.email) message += `- *${t('emailLabel')}:* ${order.customer.email}\n`;
-    message += `\n`;
-
-    message += `*${t('productsSectionTitle')}:*\n`;
-    order.items.forEach((item, index) => {
-      const itemTotal = formatCurrency(item.total_price || (item.unit_price * item.quantity), currency);
-      message += `${index + 1}. *${item.product.name}*\n`;
-      message += `   - *${t('variationLabel')}:* ${item.variation.name}\n`;
-      message += `   - *${t('quantityLabel')}:* ${item.quantity}\n`;
-      message += `   - *${t('priceLabel')}:* ${itemTotal}\n`;
-      if (item.special_notes) message += `   - *${t('noteLabel')}:* ${item.special_notes}\n`;
-      message += `\n`;
-    });
-
-    message += `*${t('orderSummaryTitle')}:*\n`;
-    message += `- *${t('subtotalLabel')}:* ${formatCurrency(order.subtotal, currency)}\n`;
-    if (order.delivery_cost && order.delivery_cost > 0) {
-      message += `- *${t('deliveryLabel')}:* ${formatCurrency(order.delivery_cost, currency)}\n`;
-    }
-    message += `- *${t('totalLabel')}:* ${formatCurrency(order.total, currency)}\n\n`;
-    message += `*${t('thankYouForOrder')}*`;
-
-    return encodeURIComponent(message);
-  };
-
-  const sendWhatsAppMessageById = async (orderId: string) => {
-    await ensureCatalogLoaded();
-    const full = await fetchOrderById(orderId);
-    if (!full) return;
-
-    if (!full.customer?.phone || full.customer.phone.trim() === '') {
-      showToast('error', t('errorTitle'), t('noPhoneError'), 4000);
-      return;
-    }
-
-    const whatsappNumber = full.customer.phone.replace(/[^\d]/g, '');
-    if (!whatsappNumber || whatsappNumber.length < 10) {
-      showToast('error', t('errorTitle'), t('invalidPhoneError'), 4000);
-      return;
-    }
-
-    const msg = generateWhatsAppMessage(full);
-    const url = `https://wa.me/${whatsappNumber}?text=${msg}`;
-    const newWindow = window.open(url, '_blank');
-
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-      showToast('warning', t('warningTitle'), t('popupWarning'), 5000);
-      return;
-    }
-
-    showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
-  };
-
-    // =============================
-  // 7.b) WhatsApp al CLIENTE según estado
-  // =============================
-  
   const generateCustomerStatusMessage = (order: Order, status: Order['status']) => {
     const restaurantName = restaurant?.name || t('restaurantDefaultName');
     const customerName = order.customer?.name || order.customer_name || '';
@@ -802,7 +734,6 @@ const handleEditOrderById = async (orderId: string) => {
   ¡Te esperamos de nuevo!`;
   
       default:
-        // cancelled u otros: por defecto no enviamos
         return '';
     }
   };
@@ -816,32 +747,7 @@ const handleEditOrderById = async (orderId: string) => {
   
     return !!newWindow && !newWindow.closed && typeof newWindow.closed !== 'undefined';
   };
-  
-  const sendWhatsAppStatusUpdateById = async (orderId: string, newStatus: Order['status']) => {
-    // Solo estados con plantilla
-    const allowed: Order['status'][] = ['pending', 'confirmed', 'preparing', 'ready', 'delivered'];
-    if (!allowed.includes(newStatus)) return;
-  
-    const full = await fetchOrderById(orderId);
-    if (!full) return;
-  
-    const phone = full.customer?.phone || '';
-    if (!phone.trim()) {
-      showToast('error', t('errorTitle'), t('noPhoneError'), 4000);
-      return;
-    }
-  
-    const message = generateCustomerStatusMessage(full, newStatus);
-    if (!message) return;
-  
-    const ok = openWhatsAppToCustomer(phone, message);
-    if (!ok) {
-      showToast('warning', t('warningTitle'), t('popupWarning'), 5000);
-      return;
-    }
-  
-    showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
-  };
+
 
 
   // =============================
