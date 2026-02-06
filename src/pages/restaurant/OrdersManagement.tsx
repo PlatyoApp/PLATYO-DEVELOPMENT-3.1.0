@@ -723,32 +723,44 @@ const handleEditOrderById = async (orderId: string) => {
   };
 
   const sendWhatsAppMessageById = async (orderId: string) => {
+    // Si necesitas catálogo para otras cosas, puedes dejar ensureCatalogLoaded().
+    // Para el mensaje por estado NO es obligatorio, pero no hace daño.
     await ensureCatalogLoaded();
+  
     const full = await fetchOrderById(orderId);
     if (!full) return;
-
+  
     if (!full.customer?.phone || full.customer.phone.trim() === '') {
       showToast('error', t('errorTitle'), t('noPhoneError'), 4000);
       return;
     }
-
+  
     const whatsappNumber = full.customer.phone.replace(/[^\d]/g, '');
     if (!whatsappNumber || whatsappNumber.length < 10) {
       showToast('error', t('errorTitle'), t('invalidPhoneError'), 4000);
       return;
     }
-
-    const msg = generateWhatsAppMessage(full);
-    const url = `https://wa.me/${whatsappNumber}?text=${msg}`;
+  
+    // ✅ NUEVO: mensaje según el estado actual del pedido
+    const message = generateCustomerStatusMessage(full, full.status);
+  
+    if (!message) {
+      showToast('warning', t('warningTitle'), 'Este estado no tiene mensaje configurado.', 4000);
+      return;
+    }
+  
+    // Importante: encodeURIComponent aquí (porque ahora el mensaje no viene encoded)
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
     const newWindow = window.open(url, '_blank');
-
+  
     if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
       showToast('warning', t('warningTitle'), t('popupWarning'), 5000);
       return;
     }
-
+  
     showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
   };
+
 
   // =============================
 // WhatsApp al CLIENTE según estado
