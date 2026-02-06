@@ -53,7 +53,7 @@ type GlobalStats = {
 
 // Cache entries (memoria + sessionStorage)
 type CachePayload = {
-  categories: Category[];
+  // categories: Category[]; // (SIN USO) Categorías ya NO se cachean
   products: ProductListItem[];
   totalProducts: number;
 };
@@ -157,6 +157,56 @@ export const MenuManagement: React.FC = () => {
     setCurrentSubscription(data);
   };
 
+  // ============================
+  // ✅ CATEGORÍAS SIN CACHÉ
+  // ============================
+  const loadCategoriesNoCache = async () => {
+    if (!restaurant?.id) return;
+
+    const { data, error } = await supabase
+      .from('categories')
+      .select('id, name, icon') // payload pequeño
+      .eq('restaurant_id', restaurant.id)
+      .eq('is_active', true)
+      .order('name', { ascending: true }); // si tienes display_order, cambia a display_order
+
+    if (error) {
+      console.error('[MenuManagement] Error loading categories (no cache):', error);
+      return;
+    }
+
+    setCategories((data as any) || []);
+  };
+
+  // Carga inicial de categorías (sin caché)
+  useEffect(() => {
+    if (!restaurant?.id) return;
+    loadCategoriesNoCache();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurant?.id]);
+
+  // Escuchar evento global para actualizar categorías al instante
+  useEffect(() => {
+    const handler = async (e: any) => {
+      const eventRestaurantId = e?.detail?.restaurantId;
+      if (eventRestaurantId && restaurant?.id && eventRestaurantId !== restaurant.id) return;
+
+      // Recarga categorías inmediatamente (SIN tocar productos/caché)
+      await loadCategoriesNoCache();
+    };
+
+    window.addEventListener('categories_updated', handler as any);
+    return () => window.removeEventListener('categories_updated', handler as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurant?.id]);
+
+  // Si la categoría seleccionada ya no existe (p. ej. se desactivó), vuelve a ALL
+  useEffect(() => {
+    if (selectedCategory === 'all') return;
+    const exists = categories.some((c) => c.id === selectedCategory);
+    if (!exists) setSelectedCategory('all');
+  }, [categories, selectedCategory]);
+
   // ====== Cache helpers (no rompe si excede cuota) ======
   const saveCache = (payload: CachePayload) => {
     if (!restaurant?.id) return;
@@ -214,7 +264,7 @@ export const MenuManagement: React.FC = () => {
         return false;
       }
 
-      setCategories(hit.payload.categories ?? []);
+      // setCategories(hit.payload.categories ?? []); // (SIN USO) ya NO cacheamos categorías
       setProducts(hit.payload.products ?? []);
       setTotalProducts(hit.payload.totalProducts ?? 0);
       return true;
@@ -240,7 +290,7 @@ export const MenuManagement: React.FC = () => {
           cached.search === debouncedSearchTerm
         ) {
           const payload: CachePayload = {
-            categories: cached.categories ?? [],
+            // categories: cached.categories ?? [], // (SIN USO)
             products: cached.products ?? [],
             totalProducts: cached.totalProducts ?? 0
           };
@@ -249,7 +299,7 @@ export const MenuManagement: React.FC = () => {
           const sig = makeCacheSignature(restaurant.id);
           memoryCacheRef.current.set(sig, { ts: cached.ts, payload });
 
-          setCategories(payload.categories);
+          // setCategories(payload.categories); // (SIN USO)
           setProducts(payload.products);
           setTotalProducts(payload.totalProducts);
           return true;
@@ -353,21 +403,18 @@ export const MenuManagement: React.FC = () => {
     setLoadingProducts(true);
 
     try {
-      // ✅ Paralelo: categorías + productos (elimina waterfall)
-      const categoriesQuery = supabase
-        .from('categories')
-        .select('id, name, icon') // ✅ payload menor
-        .eq('restaurant_id', restaurant.id)
-        .eq('is_active', true);
+      // ⚠️ YA NO cargamos categorías aquí (las carga loadCategoriesNoCache sin caché)
+      // const categoriesQuery = supabase
+      //   .from('categories')
+      //   .select('id, name, icon')
+      //   .eq('restaurant_id', restaurant.id)
+      //   .eq('is_active', true);
 
       const productsQueryPromise = buildProductsQuery(page);
 
-      const [{ data: categoriesData, error: categoriesError }, { data: productsData, error: productsError, count }] =
-        await Promise.all([categoriesQuery, productsQueryPromise]);
-
-      if (categoriesError) console.error('Error loading categories:', categoriesError);
-      const safeCategories = (categoriesData as any) || [];
-      setCategories(safeCategories);
+      const [{ data: productsData, error: productsError, count }] = await Promise.all([
+        productsQueryPromise
+      ]);
 
       if (productsError) {
         console.error('Error loading products:', productsError);
@@ -388,7 +435,6 @@ export const MenuManagement: React.FC = () => {
       setProducts(productsWithCategory);
 
       saveCache({
-        categories: safeCategories,
         products: productsWithCategory,
         totalProducts: total
       });
@@ -456,7 +502,7 @@ export const MenuManagement: React.FC = () => {
   // ====== Prefetch página siguiente (solo ALL sin búsqueda; acelera “Siguiente”) ======
   useEffect(() => {
     if (!restaurant?.id) return;
-    if (!shouldUseGlobalAllStats) return; // prefetch solo en escenario típico de navegación
+    if (!shouldUseGlobalAllStats) return;
     if (loadingProducts) return;
     if (page >= totalPages) return;
 
@@ -465,7 +511,6 @@ export const MenuManagement: React.FC = () => {
     const prefetch = async () => {
       const nextPage = page + 1;
 
-      // si ya está en memoria y fresco, no hacemos nada
       const sig = `${restaurant.id}|p:${nextPage}|cat:${selectedCategory}|s:${debouncedSearchTerm}`;
       const hit = memoryCacheRef.current.get(sig);
       if (hit && Date.now() - hit.ts < CACHE_TTL_MS) return;
@@ -481,14 +526,13 @@ export const MenuManagement: React.FC = () => {
         }));
 
         const payload: CachePayload = {
-          categories, // ya están en state
           products: productsWithCategory,
           totalProducts: count ?? totalProducts
         };
 
         memoryCacheRef.current.set(sig, { ts: Date.now(), payload });
       } catch {
-        // ignore prefetch errors
+        // ignore
       }
     };
 
