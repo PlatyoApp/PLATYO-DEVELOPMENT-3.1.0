@@ -521,7 +521,7 @@ export const OrdersManagement: React.FC = () => {
     setSelectedOrder(null);
     setLoadingOrderDetail(true);
   
-    const full = await fetchOrderById(orderId);
+    const full = await fetchOrderById(orderId, { mode: 'view' }); // sin catálogo
   
     setLoadingOrderDetail(false);
     if (full) setSelectedOrder(full);
@@ -684,71 +684,72 @@ const handleEditOrderById = async (orderId: string) => {
   };
 
   // =============================
-  // WhatsApp al CLIENTE según estado
-  // (se usa SOLO al hacer click en el icono de mensaje)
+  // 7) WhatsApp: needs detail => lazy (and keep behavior)
   // =============================
-  const generateCustomerStatusMessage = (order: Order, status: Order['status']) => {
+  const generateWhatsAppMessage = (order: Order) => {
     const restaurantName = restaurant?.name || t('restaurantDefaultName');
-    const customerName = order.customer?.name || order.customer_name || '';
     const orderNumber = order.order_number;
-  
-    switch (status) {
-      case 'pending':
-        return `✨ ¡Buenas noticias, ${customerName}!
-  
-  Tu pedido #${orderNumber} ya fue recibido en ${restaurantName} 🍽️
-  Ahora lo estamos revisando para confirmarlo.
-  
-  En unos momentos te damos una nueva actualización 😉`;
-  
-      case 'confirmed':
-        return `✨ ¡Tu pedido ya está en proceso, ${customerName}!
-  
-  Tu pedido #${orderNumber} ya fue confirmado en ${restaurantName} 🙌
-  Y empezaremos a prepararlo pronto 🍽️
-  
-  Te avisamos cuando esté listo 😉`;
-  
-      case 'preparing':
-        return `🍳 ¡Ya arrancamos con tu pedido, ${customerName}!
-  
-  Tu pedido #${orderNumber} se está preparando en ${restaurantName} 👨‍🍳✨
-  Lo estamos haciendo con mucho cuidado para que lo disfrutes al máximo.
-  
-  ⏱️ Tiempo estimado: 30–45 minutos
-  
-  Te avisamos apenas esté listo 😉`;
-  
-      case 'ready':
-        return `🎉 ¡Está listo, ${customerName}!
-  Tu pedido #${orderNumber} ya está listo en nuestro restaurante 🍽️✨
-  Puedes pasar a recogerlo cuando quieras.
-  Si es para entrega, nuestro equipo ya lo tiene todo preparado 🚚
-  ¡Te esperamos!`;
-  
-      case 'delivered':
-        return `🎉 ¡Pedido entregado, ${customerName}!
-  Tu pedido #${orderNumber} ya fue entregado con éxito 🚚🍽️
-  Esperamos que lo disfrutes muchísimo.
-  Gracias por elegir ${restaurantName} 💚
-  ¡Te esperamos de nuevo!`;
-  
-      default:
-        return '';
+    const orderDate = new Date(order.created_at).toLocaleString();
+
+    let message = `*${t('newOrderTitle')} - ${restaurantName}*\n`;
+    message += `*${t('dateLabel')}:* ${orderDate}\n`;
+    message += `*${t('orderNumberLabel')}:* ${orderNumber}\n\n`;
+
+    message += `*${t('customerSectionTitle')}:*\n`;
+    message += `- *${t('nameLabel')}:* ${order.customer.name}\n`;
+    message += `- *${t('phone_label')}:* ${order.customer.phone}\n`;
+    if (order.customer.email) message += `- *${t('emailLabel')}:* ${order.customer.email}\n`;
+    message += `\n`;
+
+    message += `*${t('productsSectionTitle')}:*\n`;
+    order.items.forEach((item, index) => {
+      const itemTotal = formatCurrency(item.total_price || (item.unit_price * item.quantity), currency);
+      message += `${index + 1}. *${item.product.name}*\n`;
+      message += `   - *${t('variationLabel')}:* ${item.variation.name}\n`;
+      message += `   - *${t('quantityLabel')}:* ${item.quantity}\n`;
+      message += `   - *${t('priceLabel')}:* ${itemTotal}\n`;
+      if (item.special_notes) message += `   - *${t('noteLabel')}:* ${item.special_notes}\n`;
+      message += `\n`;
+    });
+
+    message += `*${t('orderSummaryTitle')}:*\n`;
+    message += `- *${t('subtotalLabel')}:* ${formatCurrency(order.subtotal, currency)}\n`;
+    if (order.delivery_cost && order.delivery_cost > 0) {
+      message += `- *${t('deliveryLabel')}:* ${formatCurrency(order.delivery_cost, currency)}\n`;
     }
+    message += `- *${t('totalLabel')}:* ${formatCurrency(order.total, currency)}\n\n`;
+    message += `*${t('thankYouForOrder')}*`;
+
+    return encodeURIComponent(message);
   };
-  
-  const openWhatsAppToCustomer = (phoneRaw: string, message: string) => {
-    const whatsappNumber = (phoneRaw || '').replace(/[^\d]/g, '');
-    if (!whatsappNumber || whatsappNumber.length < 10) return false;
-  
-    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+
+  const sendWhatsAppMessageById = async (orderId: string) => {
+    await ensureCatalogLoaded();
+    const full = await fetchOrderById(orderId);
+    if (!full) return;
+
+    if (!full.customer?.phone || full.customer.phone.trim() === '') {
+      showToast('error', t('errorTitle'), t('noPhoneError'), 4000);
+      return;
+    }
+
+    const whatsappNumber = full.customer.phone.replace(/[^\d]/g, '');
+    if (!whatsappNumber || whatsappNumber.length < 10) {
+      showToast('error', t('errorTitle'), t('invalidPhoneError'), 4000);
+      return;
+    }
+
+    const msg = generateWhatsAppMessage(full);
+    const url = `https://wa.me/${whatsappNumber}?text=${msg}`;
     const newWindow = window.open(url, '_blank');
-  
-    return !!newWindow && !newWindow.closed && typeof newWindow.closed !== 'undefined';
+
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+      showToast('warning', t('warningTitle'), t('popupWarning'), 5000);
+      return;
+    }
+
+    showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
   };
-
-
 
   // =============================
   // 8) PRINT TICKET (keep EXACT design)  ✅ FIX #1
