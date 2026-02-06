@@ -691,56 +691,60 @@ const handleEditOrderById = async (orderId: string) => {
     const customerName = order.customer?.name || '';
     const orderNumber = order.order_number || '';
 
+    // Sin iconos/emojis. Usamos negrilla con *texto*.
     switch (order.status) {
       case 'pending':
-        return `✨ ¡Buenas noticias, ${customerName}!
+        return `Hola *${customerName}*.
 
-Tu pedido ${orderNumber} ya fue recibido en ${restaurantName} 🍽️
-Ahora lo estamos revisando para confirmarlo.
+¡Gracias por tu pedido! Ya lo recibimos y lo estamos revisando para confirmarlo.
 
-En unos momentos te damos una nueva actualización 😉`;
+Pedido: *${orderNumber}*
+Restaurante: *${restaurantName}*
+
+En breve te enviamos la confirmación.`;
 
       case 'confirmed':
-        return `✨ ¡Tu pedido ya está en proceso, ${customerName}!
+        return `Hola *${customerName}*.
 
-Tu pedido ${orderNumber} ya fue confirmado en ${restaurantName} 🙌
-Y empezaremos a prepararlo pronto 🍽️
+¡Tu pedido fue *confirmado*! Ya lo tenemos en marcha.
 
-Te avisamos cuando esté listo 😉`;
+Te avisamos cuando esté en preparación y cuando esté listo.`;
 
       case 'preparing':
-        return `🍳 ¡Ya arrancamos con tu pedido, ${customerName}!
+        return `Hola *${customerName}*.
 
-Tu pedido ${orderNumber} se está preparando en ${restaurantName} 👨‍🍳✨
-Lo estamos haciendo con mucho cuidado para que lo disfrutes al máximo.
+Ya estamos *preparando* tu pedido.
 
-⏱️ Tiempo estimado: 30–45 minutos
-
-Te avisamos apenas esté listo 😉`;
+Te avisamos en cuanto esté listo.`;
 
       case 'ready':
-        return `🎉 ¡Está listo, ${customerName}!
-Tu pedido ${orderNumber} ya está listo en nuestro restaurante 🍽️✨
-Puedes pasar a recogerlo cuando quieras.
-Si es para entrega, nuestro equipo ya lo tiene todo preparado 🚚
-¡Te esperamos!`;
+        return `Hola *${customerName}*.
+
+¡Tu pedido ya está *listo*!
+
+Puedes pasar a recogerlo cuando quieras. Si es para entrega, ya está todo preparado para salir.`;
 
       case 'delivered':
-        return `🎉 ¡Pedido entregado, ${customerName}!
-Tu pedido ${orderNumber} ya fue entregado con éxito 🚚🍽️
-Esperamos que lo disfrutes muchísimo.
-Gracias por elegir ${restaurantName} 💚
-¡Te esperamos de nuevo!`;
+        return `Hola *${customerName}*.
+
+¡Pedido *entregado* con éxito!
+
+Gracias por elegir *${restaurantName}*. Si te gustó, aquí estamos para tu próximo antojo.`;
 
       case 'cancelled':
-        return `Hola ${customerName}.
-Tu pedido ${orderNumber} en ${restaurantName} fue cancelado.
-Si necesitas ayuda o deseas crear un nuevo pedido, escríbenos por este medio.`;
+        return `Hola *${customerName}*.
+
+Tu pedido fue *cancelado*.
+
+Si quieres, podemos ayudarte a crearlo de nuevo o revisarlo contigo por este medio.`;
 
       default:
-        return `Hola ${customerName}. Tu pedido ${orderNumber} en ${restaurantName} está en estado: ${order.status}.`;
+        return `Hola *${customerName}*.
+
+Tu pedido está en estado: *${order.status}*.`;
     }
   };
+
 
   const generateWhatsAppMessage = (order: Order) => {
     const message = buildWhatsappStatusMessage(order);
