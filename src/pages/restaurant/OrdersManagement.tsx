@@ -701,14 +701,14 @@ const handleEditOrderById = async (orderId: string) => {
 Pedido: *${orderNumber}*
 Restaurante: *${restaurantName}*
 
-En breve te enviamos la confirmación.`;
+En breve te actualizaremos sobre el estado de tu pedido`;
 
       case 'confirmed':
         return `Hola *${customerName}*.
 
-¡Tu pedido fue *confirmado*! Ya lo tenemos en marcha.
+¡Tu pedido fue *confirmado!* Ya lo tenemos en marcha.
 
-Te avisamos cuando esté en preparación y cuando esté listo.`;
+Te avisaremos cuando esté en preparación y se encuentre listo.`;
 
       case 'preparing':
         return `Hola *${customerName}*.
@@ -720,9 +720,7 @@ Te avisamos en cuanto esté listo.`;
       case 'ready':
         return `Hola *${customerName}*.
 
-¡Tu pedido ya está *listo*!
-
-Puedes pasar a recogerlo cuando quieras. Si es para entrega, ya está todo preparado para salir.`;
+¡Tu pedido ya está *listo*!`;
 
       case 'delivered':
         return `Hola *${customerName}*.
