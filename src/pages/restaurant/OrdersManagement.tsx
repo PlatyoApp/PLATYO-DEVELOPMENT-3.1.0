@@ -751,6 +751,71 @@ const handleEditOrderById = async (orderId: string) => {
   };
 
   // =============================
+// WhatsApp al CLIENTE según estado
+// (se usa SOLO al hacer click en el icono de mensaje)
+// =============================
+const generateCustomerStatusMessage = (order: Order, status: Order['status']) => {
+  const restaurantName = restaurant?.name || t('restaurantDefaultName');
+  const customerName = order.customer?.name || order.customer_name || '';
+  const orderNumber = order.order_number;
+
+  switch (status) {
+    case 'pending':
+      return `✨ ¡Buenas noticias, ${customerName}!
+
+Tu pedido #${orderNumber} ya fue recibido en ${restaurantName} 🍽️
+Ahora lo estamos revisando para confirmarlo.
+
+En unos momentos te damos una nueva actualización 😉`;
+
+    case 'confirmed':
+      return `✨ ¡Tu pedido ya está en proceso, ${customerName}!
+
+Tu pedido #${orderNumber} ya fue confirmado en ${restaurantName} 🙌
+Y empezaremos a prepararlo pronto 🍽️
+
+Te avisamos cuando esté listo 😉`;
+
+    case 'preparing':
+      return `🍳 ¡Ya arrancamos con tu pedido, ${customerName}!
+
+Tu pedido #${orderNumber} se está preparando en ${restaurantName} 👨‍🍳✨
+Lo estamos haciendo con mucho cuidado para que lo disfrutes al máximo.
+
+⏱️ Tiempo estimado: 30–45 minutos
+
+Te avisamos apenas esté listo 😉`;
+
+    case 'ready':
+      return `🎉 ¡Está listo, ${customerName}!
+Tu pedido #${orderNumber} ya está listo en nuestro restaurante 🍽️✨
+Puedes pasar a recogerlo cuando quieras.
+Si es para entrega, nuestro equipo ya lo tiene todo preparado 🚚
+¡Te esperamos!`;
+
+    case 'delivered':
+      return `🎉 ¡Pedido entregado, ${customerName}!
+Tu pedido #${orderNumber} ya fue entregado con éxito 🚚🍽️
+Esperamos que lo disfrutes muchísimo.
+Gracias por elegir ${restaurantName} 💚
+¡Te esperamos de nuevo!`;
+
+    default:
+      return '';
+  }
+};
+
+const openWhatsAppToCustomer = (phoneRaw: string, message: string) => {
+  const whatsappNumber = (phoneRaw || '').replace(/[^\d]/g, '');
+  if (!whatsappNumber || whatsappNumber.length < 10) return false;
+
+  const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+  const newWindow = window.open(url, '_blank');
+
+  return !!newWindow && !newWindow.closed && typeof newWindow.closed !== 'undefined';
+};
+
+  // =============================
   // 8) PRINT TICKET (keep EXACT design)  ✅ FIX #1
   // =============================
   const printTicket = (order: Order) => {
