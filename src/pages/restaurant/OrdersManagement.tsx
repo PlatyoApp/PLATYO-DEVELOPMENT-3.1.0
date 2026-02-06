@@ -704,9 +704,7 @@ Restaurante: *${restaurantName}*
 En breve te actualizaremos sobre el estado de tu pedido`;
 
       case 'confirmed':
-        return `Hola *${customerName}*.
-
-¡Tu pedido fue *confirmado!* Ya lo tenemos en marcha.
+        return `¡Tu pedido fue *confirmado!* Ya lo tenemos en marcha.
 
 Te avisaremos cuando esté en preparación y se encuentre listo.`;
 
