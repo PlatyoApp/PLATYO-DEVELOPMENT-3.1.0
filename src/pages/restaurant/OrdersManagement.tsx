@@ -1897,24 +1897,18 @@ const handleEditOrderById = async (orderId: string) => {
                   <span>{t('subtotalLabel')}:</span>
                   <span>{formatCurrency(selectedOrder.subtotal, currency)}</span>
                 </div>
-              
-                {selectedOrder.delivery_cost != null && (
+                {selectedOrder.delivery_cost && selectedOrder.delivery_cost > 0 && (
                   <div className="flex justify-between">
                     <span>{t('deliveryLabel')}:</span>
-                    <span>
-                      {selectedOrder.delivery_cost > 0
-                        ? formatCurrency(selectedOrder.delivery_cost, currency)
-                        : t('freeLabel')}
-                    </span>
+                    <span>{formatCurrency(selectedOrder.delivery_cost, currency)}</span>
                   </div>
                 )}
-              
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
                   <span>{t('total')}:</span>
                   <span>{formatCurrency(selectedOrder.total, currency)}</span>
                 </div>
               </div>
-
+            </div>
 
             {selectedOrder.special_instructions && (
               <div className="bg-yellow-50 p-4 rounded-lg">
