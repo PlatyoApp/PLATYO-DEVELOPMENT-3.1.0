@@ -727,14 +727,14 @@ Te avisamos en cuanto esté listo.`;
 
 ¡Pedido *entregado* con éxito!
 
-Gracias por elegir *${restaurantName}*. Si te gustó, aquí estamos para tu próximo antojo.`;
+Gracias por elegir *${restaurantName}*. Estaremos encantados de atenderte nuevamente.`;
 
       case 'cancelled':
         return `Hola *${customerName}*.
 
 Tu pedido fue *cancelado*.
 
-Si quieres, podemos ayudarte a crearlo de nuevo o revisarlo contigo por este medio.`;
+Si quieres, podemos ayudarte a crearlo de nuevo o revisarlo contigo.`;
 
       default:
         return `Hola *${customerName}*.
