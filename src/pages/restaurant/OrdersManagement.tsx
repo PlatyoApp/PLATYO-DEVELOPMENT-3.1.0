@@ -719,9 +719,7 @@ Te informaremos en cuanto esté listo.`;
 ¡Tu pedido ya se encuentra *listo*!`;
 
       case 'delivered':
-        return `Hola *${customerName}*.
-
-¡Pedido *entregado* con éxito!
+        return `¡Pedido *entregado* con éxito!
 
 Gracias por elegir *${restaurantName}*. Estaremos encantados de atenderte nuevamente.`;
 
