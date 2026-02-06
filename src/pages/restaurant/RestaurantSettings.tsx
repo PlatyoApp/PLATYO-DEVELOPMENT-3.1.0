@@ -2692,119 +2692,119 @@ export const RestaurantSettings: React.FC = () => {
                 </div>
               </div>
 
- {/* Featured Products Selector (optimizado) */}
+ {/* Featured Products Selector */}
 <div className="space-y-3 bg-white border border-gray-200 rounded-lg p-6">
   <div className="flex items-center gap-2 mb-2">
     <Star className="w-5 h-5 text-orange-600" />
-    <label className="block text-sm font-medium text-gray-700">{t('featured_products_title')}</label>
+    <label className="block text-sm font-medium text-gray-700">
+      {t('featured_products_title')}
+    </label>
     <label className="block text-sm font-medium text-gray-700">(Max. 5)</label>
   </div>
 
-  <p className="text-xs text-gray-600">{t('featured_products_hint')}</p>
+  <p className="text-xs text-gray-600 mb-4">{t('featured_products_hint')}</p>
 
-  {(() => {
-    const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
+  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
+    {(() => {
+      const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
 
-    // Índice rápido por ID (O(1))
-    const productById = new Map(products.map((p: any) => [p.id, p]));
+      // ✅ Lookup O(1)
+      const productIdSet = new Set(products.map((p: any) => p.id));
+      const validSelectedIds = selectedIds.filter((id) => productIdSet.has(id));
 
-    // Limpiar IDs inválidos solo una vez por cambio de inventario/selección
-    const validSelectedIds = selectedIds.filter((id) => productById.has(id));
-    if (validSelectedIds.length !== selectedIds.length) {
-      queueMicrotask(() => {
-        updateFormData('settings.promo.featured_product_ids', validSelectedIds);
-      });
-    }
+      // ✅ Auto-cleanup fuera del render (pero aquí seguimos sin hooks; al menos evitamos setTimeout)
+      //    Si necesitas mantenerlo aquí sí o sí, usa microtask y solo si hay diferencia.
+      if (validSelectedIds.length !== selectedIds.length) {
+        queueMicrotask(() => {
+          updateFormData('settings.promo.featured_product_ids', validSelectedIds);
+        });
+      }
 
-    const selectedSet = new Set(validSelectedIds);
-    const selectedProducts = validSelectedIds.map((id) => productById.get(id)).filter(Boolean);
-    const remainingSlots = Math.max(0, 5 - validSelectedIds.length);
+      // ✅ Para includes O(1)
+      const selectedSet = new Set(validSelectedIds);
+      const selectedCount = validSelectedIds.length;
 
-    const handleAdd = (productId: string) => {
-      if (!productId) return;
-      if (selectedSet.has(productId)) return;
-      if (validSelectedIds.length >= 5) return;
-      updateFormData('settings.promo.featured_product_ids', [...validSelectedIds, productId]);
-    };
+      const toggle = (productId: string) => {
+        let newIds = validSelectedIds;
 
-    const handleRemove = (productId: string) => {
-      updateFormData(
-        'settings.promo.featured_product_ids',
-        validSelectedIds.filter((id) => id !== productId)
-      );
-    };
+        if (selectedSet.has(productId)) {
+          // deseleccionar
+          newIds = validSelectedIds.filter((id) => id !== productId);
+        } else {
+          // seleccionar (máx 5)
+          if (selectedCount >= 5) return;
+          newIds = [...validSelectedIds, productId];
+        }
 
-    // Opciones: solo por nombre, sin imágenes ni render pesado
-    const availableOptions = products
-      .filter((p: any) => !selectedSet.has(p.id))
-      .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+        updateFormData('settings.promo.featured_product_ids', newIds);
+      };
 
-    return (
-      <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-1">{t('select_product') || 'Seleccionar producto'}</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-              onChange={(e) => {
-                handleAdd(e.target.value);
-                e.currentTarget.value = '';
-              }}
-              disabled={products.length === 0 || remainingSlots === 0}
-              defaultValue=""
-            >
-              <option value="" disabled>
-                {remainingSlots === 0
-                  ? (t('max_reached') || 'Máximo alcanzado')
-                  : (t('choose_product') || 'Elige un producto por nombre')}
-              </option>
-              {availableOptions.map((p: any) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {products.length === 0 && (
-              <p className="text-xs text-gray-500 mt-2">{t('noProductsAdded')}</p>
-            )}
-          </div>
+      return (
+        <div className="space-y-2">
+          {products.map((product: any) => {
+            const isSelected = selectedSet.has(product.id);
+            const canSelect = selectedCount < 5 || isSelected;
 
-          <div className="sm:col-span-1">
-            <div className="text-xs text-gray-600">
-              {validSelectedIds.length} {t('featured_products_selected')}
-            </div>
-            <div className="text-xs text-gray-500">{remainingSlots} {t('remaining') || 'disponibles'}</div>
-          </div>
-        </div>
+            return (
+              <label
+                key={product.id}
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-orange-50 border-orange-300'
+                    : canSelect
+                    ? 'bg-white border-gray-200 hover:border-gray-300'
+                    : 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  disabled={!canSelect}
+                  onChange={() => toggle(product.id)}
+                  className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                />
 
-        {selectedProducts.length > 0 && (
-          <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-            <p className="text-xs font-medium text-gray-700 mb-2">{t('selected_products') || 'Seleccionados'}</p>
-            <div className="space-y-2">
-              {selectedProducts.map((p: any) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{p.name}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600 hover:text-red-700"
-                    onClick={() => handleRemove(p.id)}
-                  >
-                    {t('remove') || 'Quitar'}
-                  </Button>
+                {product.images?.[0] && (
+                  <img
+                    src={product.images[0]}
+                    alt={product.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-12 h-12 object-cover rounded-lg"
+                  />
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {product.name}
+                  </p>
+                  {/* ✅ descripción eliminada */}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  })()}
+
+                {isSelected && <Badge variant="success">{t('featured_products_label')}</Badge>}
+              </label>
+            );
+          })}
+
+          {products.length === 0 && (
+            <p className="text-center text-gray-500 text-sm py-4">{t('noProductsAdded')}</p>
+          )}
+        </div>
+      );
+    })()}
+  </div>
+
+  <p className="text-xs text-gray-600">
+    {(() => {
+      const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
+      const productIdSet = new Set(products.map((p: any) => p.id));
+      const validCount = selectedIds.reduce((acc, id) => acc + (productIdSet.has(id) ? 1 : 0), 0);
+      return `${validCount} ${t('featured_products_selected')}`;
+    })()}
+  </p>
 </div>
-<div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-start gap-2">
                   <Megaphone className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <div>
