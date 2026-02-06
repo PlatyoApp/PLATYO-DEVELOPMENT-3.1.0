@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, User, Settings, Store, Menu } from 'lucide-react';
+import { LogOut, User, Settings, Store, ChefHat, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Button } from '../ui/Button';
@@ -10,11 +10,7 @@ interface HeaderProps {
   onNavigateToDashboard?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
-  onNavigateToSettings,
-  onToggleSidebar,
-  onNavigateToDashboard,
-}) => {
+export const Header: React.FC<HeaderProps> = ({ onNavigateToSettings, onToggleSidebar, onNavigateToDashboard }) => {
   const { user, restaurant, logout } = useAuth();
   const { t } = useLanguage();
 
@@ -38,11 +34,11 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
               >
                 <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg">
-                  <img
-                    src="/PLATYO FAVICON BLANCO.svg"
-                    alt="Platyo"
-                    className="w-11 h-11 object-contain flex-shrink-0"
-                  />
+                <img
+                  src="/PLATYO FAVICON BLANCO.svg"
+                  alt="Platyo"
+                  className="w-10 h-10 flex-shrink-0"
+                />
                 </div>
                 <div className="min-w-0 text-left">
                   <h1 className="text-lg font-bold text-white truncate">Platyo</h1>
@@ -50,27 +46,22 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </button>
             )}
-
             {user?.role !== 'superadmin' && (
               <button
                 onClick={onNavigateToDashboard}
-                className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer min-w-0"
+                className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer"
               >
                 {restaurant?.logo_url ? (
-                  // Contenedor fijo (no rompe el layout) + imagen "contain" (no recorta)
-                  <div className="h-12 w-12 md:h-12 md:w-12 rounded-xl shadow-md bg-slate-800/40 border border-slate-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    <img
-                      src={restaurant.logo_url}
-                      alt={restaurant.name}
-                      className="h-11 w-11 object-contain"
-                    />
-                  </div>
+                  <img
+                    src={restaurant.logo_url}
+                    alt={restaurant.name}
+                    className="h-10 w-auto max-w-[40px] rounded-xl object-contain flex-shrink-0 shadow-md"
+                  />
                 ) : (
-                  <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
-                    <Store className="h-7 w-7 text-white" />
+                  <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+                    <Store className="h-6 w-6 text-white" />
                   </div>
                 )}
-
                 <h1 className="text-base md:text-xl font-semibold text-white truncate min-w-0">
                   {restaurant?.name}
                 </h1>
@@ -81,9 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-slate-800/50 rounded-lg border border-slate-700">
               <User className="w-4 h-4 text-emerald-400" />
-              <span className="text-sm text-slate-200 truncate max-w-48">
-                {user?.email}
-              </span>
+              <span className="text-sm text-slate-200 truncate max-w-48">{user?.email}</span>
             </div>
 
             {user?.role === 'restaurant_owner' && (
