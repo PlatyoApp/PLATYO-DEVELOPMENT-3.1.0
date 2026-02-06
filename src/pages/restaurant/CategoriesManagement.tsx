@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import {
   Plus,
   Pencil,
@@ -6,8 +6,6 @@ import {
   GripVertical,
   Eye,
   EyeOff,
-  ArrowUp,
-  ArrowDown,
   Search,
   Image as ImageIcon,
   FolderOpen,
@@ -44,7 +42,6 @@ export const CategoriesManagement: React.FC = () => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   const [loading, setLoading] = useState(false);
-
   const [page, setPage] = useState(1);
 
   const [showModal, setShowModal] = useState(false);
@@ -67,6 +64,44 @@ export const CategoriesManagement: React.FC = () => {
   // Para cambiar de página mientras arrastras (evita spam)
   const dragPagingCooldownRef = useRef<number>(0);
 
+  // Referencia del canal realtime para limpiarlo correctamente
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // ===== Cache helpers =====
+  const saveCache = useCallback((cats: Category[]) => {
+    if (!restaurant?.id) return;
+    sessionStorage.setItem(
+      cacheKey(restaurant.id),
+      JSON.stringify({ ts: Date.now(), categories: cats })
+    );
+  }, [restaurant?.id]);
+
+  const invalidateCache = useCallback(() => {
+    if (!restaurant?.id) return;
+    sessionStorage.removeItem(cacheKey(restaurant.id));
+  }, [restaurant?.id]);
+
+  const tryLoadFromCache = useCallback(() => {
+    if (!restaurant?.id) return false;
+
+    const raw = sessionStorage.getItem(cacheKey(restaurant.id));
+    if (!raw) return false;
+
+    try {
+      const cached = JSON.parse(raw);
+      const isFresh = Date.now() - cached.ts < CACHE_TTL_MS;
+      if (!isFresh) return false;
+
+      if (Array.isArray(cached.categories)) {
+        setCategories(cached.categories);
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }, [restaurant?.id]);
+
   // ===== Debounce búsqueda =====
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 250);
@@ -78,50 +113,7 @@ export const CategoriesManagement: React.FC = () => {
     setPage(1);
   }, [debouncedSearchTerm]);
 
-  // ===== Cache helpers =====
-  const saveCache = (cats: Category[]) => {
-    if (!restaurant?.id) return;
-    sessionStorage.setItem(
-      cacheKey(restaurant.id),
-      JSON.stringify({ ts: Date.now(), categories: cats })
-    );
-  };
-
-  const invalidateCache = () => {
-    if (!restaurant?.id) return;
-    sessionStorage.removeItem(cacheKey(restaurant.id));
-  };
-
-  const tryLoadFromCache = () => {
-    if (!restaurant?.id) return false;
-    const raw = sessionStorage.getItem(cacheKey(restaurant.id));
-    if (!raw) return false;
-
-    try {
-      const cached = JSON.parse(raw);
-      const isFresh = Date.now() - cached.ts < CACHE_TTL_MS;
-      if (!isFresh) return false;
-      if (Array.isArray(cached.categories)) {
-        setCategories(cached.categories);
-        return true;
-      }
-    } catch {
-      return false;
-    }
-    return false;
-  };
-
-  // ===== Initial load =====
-  useEffect(() => {
-    if (!restaurant?.id) return;
-
-    const loaded = tryLoadFromCache();
-    if (!loaded) loadCategories();
-    loadSubscription();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurant?.id]);
-
-  const loadSubscription = async () => {
+  const loadSubscription = useCallback(async () => {
     if (!restaurant?.id) return;
 
     const { data, error } = await supabase
@@ -137,9 +129,9 @@ export const CategoriesManagement: React.FC = () => {
     }
 
     setCurrentSubscription(data);
-  };
+  }, [restaurant?.id]);
 
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     if (!restaurant?.id) return;
 
     setLoading(true);
@@ -161,7 +153,86 @@ export const CategoriesManagement: React.FC = () => {
     const cats = (data || []) as Category[];
     setCategories(cats);
     saveCache(cats);
-  };
+  }, [restaurant?.id, saveCache, showToast]);
+
+  // ===== Initial load + Realtime subscribe =====
+  useEffect(() => {
+    if (!restaurant?.id) return;
+
+    // 1) carga inicial rápida (cache)
+    const loaded = tryLoadFromCache();
+    if (!loaded) loadCategories();
+
+    loadSubscription();
+
+    // 2) Realtime: se entera al instante de INSERT/UPDATE/DELETE
+    // Limpia canal anterior si cambia el restaurant
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`categories:${restaurant.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'categories',
+          filter: `restaurant_id=eq.${restaurant.id}`,
+        },
+        (payload) => {
+          // Cualquier cambio invalida el cache para que no se quede “viejo”
+          invalidateCache();
+
+          if (payload.eventType === 'INSERT') {
+            const inserted = payload.new as Category;
+            setCategories((prev) => {
+              if (prev.some((c) => c.id === inserted.id)) return prev;
+              const next = [...prev, inserted].sort(
+                (a, b) => (a.display_order || 0) - (b.display_order || 0)
+              );
+              saveCache(next);
+              return next;
+            });
+            return;
+          }
+
+          if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Category;
+            setCategories((prev) => {
+              const next = prev
+                .map((c) => (c.id === updated.id ? ({ ...c, ...updated } as Category) : c))
+                .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+              saveCache(next);
+              return next;
+            });
+            return;
+          }
+
+          if (payload.eventType === 'DELETE') {
+            const deleted = payload.old as Category;
+            setCategories((prev) => {
+              const next = prev.filter((c) => c.id !== deleted.id);
+              saveCache(next);
+              return next;
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    realtimeChannelRef.current = channel;
+
+    return () => {
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurant?.id]);
 
   // ===== Derived =====
   const filteredCategories = useMemo(() => {
@@ -204,6 +275,7 @@ export const CategoriesManagement: React.FC = () => {
 
         if (error) throw error;
 
+        // UI optimista (instantánea)
         setCategories((prev) => {
           const next = prev.map((c) =>
             c.id === editingCategory.id
@@ -231,7 +303,10 @@ export const CategoriesManagement: React.FC = () => {
 
         if (error) throw error;
 
+        // UI optimista (instantánea)
         setCategories((prev) => {
+          // evita duplicados por si Realtime llega casi a la vez
+          if (prev.some((c) => c.id === (inserted as Category).id)) return prev;
           const next = [...prev, inserted as Category].sort(
             (a, b) => (a.display_order || 0) - (b.display_order || 0)
           );
@@ -270,6 +345,7 @@ export const CategoriesManagement: React.FC = () => {
       const { error } = await supabase.from('categories').delete().eq('id', categoryId);
       if (error) throw error;
 
+      // UI optimista
       setCategories((prev) => {
         const next = prev.filter((c) => c.id !== categoryId);
         saveCache(next);
@@ -331,7 +407,6 @@ export const CategoriesManagement: React.FC = () => {
 
   // ===== Reorder helpers (global order) =====
   const persistDisplayOrders = async (updates: { id: string; display_order: number }[]) => {
-    // actualiza solo lo afectado
     for (const u of updates) {
       const { error } = await supabase
         .from('categories')
@@ -342,30 +417,27 @@ export const CategoriesManagement: React.FC = () => {
     }
   };
 
-  // Inserta dragged en la posición de target (global), recalculando SOLO el rango afectado
   const reorderGlobalByInsert = async (draggedId: string, targetId: string, place: 'before' | 'after') => {
     const sorted = [...categories].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     const fromIndex = sorted.findIndex((c) => c.id === draggedId);
     const toIndex = sorted.findIndex((c) => c.id === targetId);
     if (fromIndex === -1 || toIndex === -1) return;
 
-    // Construir nuevo orden
     const working = [...sorted];
     const [dragged] = working.splice(fromIndex, 1);
 
-    const insertIndex = place === 'before'
-      ? (toIndex > fromIndex ? toIndex - 1 : toIndex)
-      : (toIndex > fromIndex ? toIndex : toIndex + 1);
+    const insertIndex =
+      place === 'before'
+        ? (toIndex > fromIndex ? toIndex - 1 : toIndex)
+        : (toIndex > fromIndex ? toIndex : toIndex + 1);
 
     working.splice(insertIndex, 0, dragged);
 
-    // Solo rango afectado
     const start = Math.min(fromIndex, insertIndex);
     const end = Math.max(fromIndex, insertIndex);
 
     const affected = working.slice(start, end + 1);
 
-    // Tomar los display_order existentes del rango original, ordenados
     const originalOrders = sorted
       .slice(start, end + 1)
       .map((c) => c.display_order || 0)
@@ -376,7 +448,6 @@ export const CategoriesManagement: React.FC = () => {
       display_order: originalOrders[i]
     }));
 
-    // Optimistic UI
     setCategories((prev) => {
       const map = new Map(prev.map((c) => [c.id, { ...c }]));
       for (const u of updates) {
@@ -398,11 +469,8 @@ export const CategoriesManagement: React.FC = () => {
     }
   };
 
-  // Mover al inicio o final de la página actual (cuando no hay target específico)
   const moveDraggedToPageEdge = async (edge: 'start' | 'end') => {
     if (!draggedCategory) return;
-
-    // si no hay items en página, no hacemos nada
     if (pagedCategories.length === 0) return;
 
     const target = edge === 'start' ? pagedCategories[0] : pagedCategories[pagedCategories.length - 1];
@@ -411,7 +479,7 @@ export const CategoriesManagement: React.FC = () => {
 
   // ===== Drag and Drop (cross-page) =====
   const handleDragStart = (e: React.DragEvent, category: Category) => {
-    if (debouncedSearchTerm) return; // evita reorder mientras buscas
+    if (debouncedSearchTerm) return;
     setDraggedCategory(category);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -435,14 +503,12 @@ export const CategoriesManagement: React.FC = () => {
       return;
     }
 
-    // Insertar antes del target (puedes cambiar a after si lo prefieres)
     await reorderGlobalByInsert(draggedCategory.id, targetCategory.id, 'before');
     setDraggedCategory(null);
   };
 
   const handleDragEnd = () => setDraggedCategory(null);
 
-  // Drop zones para mover a inicio/final de página actual
   const handleDropOnPageStart = async (e: React.DragEvent) => {
     e.preventDefault();
     if (debouncedSearchTerm) return;
@@ -457,7 +523,6 @@ export const CategoriesManagement: React.FC = () => {
     setDraggedCategory(null);
   };
 
-  // Cambiar página mientras arrastras (drag enter en botones)
   const maybeTurnPageWhileDragging = (direction: 'prev' | 'next') => {
     if (!draggedCategory) return;
     const now = Date.now();
@@ -728,11 +793,7 @@ export const CategoriesManagement: React.FC = () => {
       {/* Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => {
-          setShowModal(false);
-          setEditingCategory(null);
-          setFormData({ name: '', description: '', icon: '' });
-        }}
+        onClose={handleCloseModal}
         title={editingCategory ? `${t('edit')} ${t('category')}` : t('newCategory')}
         size="lg"
       >
@@ -777,14 +838,7 @@ export const CategoriesManagement: React.FC = () => {
           <div className="flex items-center justify-between gap-3 pt-4 border-t border-gray-200">
             <p className="text-xs text-gray-500">{t('catObligatry')}</p>
             <div className="flex gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingCategory(null);
-                  setFormData({ name: '', description: '', icon: '' });
-                }}
-              >
+              <Button variant="ghost" onClick={handleCloseModal}>
                 {t('cancel')}
               </Button>
               <Button onClick={handleSave} disabled={!formData.name.trim()}>
