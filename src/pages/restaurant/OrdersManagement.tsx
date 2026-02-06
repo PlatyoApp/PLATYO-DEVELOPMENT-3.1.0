@@ -517,14 +517,15 @@ export const OrdersManagement: React.FC = () => {
   };
 
   const handleViewOrder = async (orderId: string) => {
-    setShowModal(true);
-    setSelectedOrder(null);
-    setLoadingOrderDetail(true);
-  
-    const full = await fetchOrderById(orderId, { mode: 'view' }); // sin catálogo
-  
-    setLoadingOrderDetail(false);
-    if (full) setSelectedOrder(full);
+  setShowModal(true);
+  setSelectedOrder(null);
+  setLoadingOrderDetail(true);
+
+  // fetchOrderById NO acepta segundo parámetro
+  const full = await fetchOrderById(orderId);
+
+  setLoadingOrderDetail(false);
+  if (full) setSelectedOrder(full);
   };
 
 
@@ -750,6 +751,99 @@ const handleEditOrderById = async (orderId: string) => {
 
     showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
   };
+
+    // =============================
+  // 7.b) WhatsApp al CLIENTE según estado
+  // =============================
+  
+  const generateCustomerStatusMessage = (order: Order, status: Order['status']) => {
+    const restaurantName = restaurant?.name || t('restaurantDefaultName');
+    const customerName = order.customer?.name || order.customer_name || '';
+    const orderNumber = order.order_number;
+  
+    switch (status) {
+      case 'pending':
+        return `✨ ¡Buenas noticias, ${customerName}!
+  
+  Tu pedido #${orderNumber} ya fue recibido en ${restaurantName} 🍽️
+  Ahora lo estamos revisando para confirmarlo.
+  
+  En unos momentos te damos una nueva actualización 😉`;
+  
+      case 'confirmed':
+        return `✨ ¡Tu pedido ya está en proceso, ${customerName}!
+  
+  Tu pedido #${orderNumber} ya fue confirmado en ${restaurantName} 🙌
+  Y empezaremos a prepararlo pronto 🍽️
+  
+  Te avisamos cuando esté listo 😉`;
+  
+      case 'preparing':
+        return `🍳 ¡Ya arrancamos con tu pedido, ${customerName}!
+  
+  Tu pedido #${orderNumber} se está preparando en ${restaurantName} 👨‍🍳✨
+  Lo estamos haciendo con mucho cuidado para que lo disfrutes al máximo.
+  
+  ⏱️ Tiempo estimado: 30–45 minutos
+  
+  Te avisamos apenas esté listo 😉`;
+  
+      case 'ready':
+        return `🎉 ¡Está listo, ${customerName}!
+  Tu pedido #${orderNumber} ya está listo en nuestro restaurante 🍽️✨
+  Puedes pasar a recogerlo cuando quieras.
+  Si es para entrega, nuestro equipo ya lo tiene todo preparado 🚚
+  ¡Te esperamos!`;
+  
+      case 'delivered':
+        return `🎉 ¡Pedido entregado, ${customerName}!
+  Tu pedido #${orderNumber} ya fue entregado con éxito 🚚🍽️
+  Esperamos que lo disfrutes muchísimo.
+  Gracias por elegir ${restaurantName} 💚
+  ¡Te esperamos de nuevo!`;
+  
+      default:
+        // cancelled u otros: por defecto no enviamos
+        return '';
+    }
+  };
+  
+  const openWhatsAppToCustomer = (phoneRaw: string, message: string) => {
+    const whatsappNumber = (phoneRaw || '').replace(/[^\d]/g, '');
+    if (!whatsappNumber || whatsappNumber.length < 10) return false;
+  
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+    const newWindow = window.open(url, '_blank');
+  
+    return !!newWindow && !newWindow.closed && typeof newWindow.closed !== 'undefined';
+  };
+  
+  const sendWhatsAppStatusUpdateById = async (orderId: string, newStatus: Order['status']) => {
+    // Solo estados con plantilla
+    const allowed: Order['status'][] = ['pending', 'confirmed', 'preparing', 'ready', 'delivered'];
+    if (!allowed.includes(newStatus)) return;
+  
+    const full = await fetchOrderById(orderId);
+    if (!full) return;
+  
+    const phone = full.customer?.phone || '';
+    if (!phone.trim()) {
+      showToast('error', t('errorTitle'), t('noPhoneError'), 4000);
+      return;
+    }
+  
+    const message = generateCustomerStatusMessage(full, newStatus);
+    if (!message) return;
+  
+    const ok = openWhatsAppToCustomer(phone, message);
+    if (!ok) {
+      showToast('warning', t('warningTitle'), t('popupWarning'), 5000);
+      return;
+    }
+  
+    showToast('success', t('successTitle'), t('openingWhatsapp'), 2000);
+  };
+
 
   // =============================
   // 8) PRINT TICKET (keep EXACT design)  ✅ FIX #1
