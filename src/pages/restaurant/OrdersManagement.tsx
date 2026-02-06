@@ -718,9 +718,9 @@ Ya estamos *preparando* tu pedido.
 Te informaremos en cuanto esté listo.`;
 
       case 'ready':
-        return `Hola *${customerName}*.
+        return `Buenas noticias *${customerName}*.
 
-¡Tu pedido ya está *listo*!`;
+¡Tu pedido ya se encuentra *listo*!`;
 
       case 'delivered':
         return `Hola *${customerName}*.
