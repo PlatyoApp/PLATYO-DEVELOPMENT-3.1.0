@@ -709,9 +709,7 @@ En breve te actualizaremos sobre el estado de tu pedido`;
 Te avisaremos cuando esté en preparación y se encuentre listo.`;
 
       case 'preparing':
-        return `Hola *${customerName}*.
-
-Ya estamos *preparando* tu pedido.
+        return `Ya estamos *preparando* tu pedido.
 
 Te informaremos en cuanto esté listo.`;
 
