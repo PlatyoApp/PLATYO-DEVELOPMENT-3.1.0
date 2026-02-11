@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Minus, Plus, X } from 'lucide-react';
-import { Product, ProductVariation, Restaurant } from '../../types';
+import { Product, ProductVariation, Restaurant, ProductIngredient } from '../../types';
 import { useCart } from '../../contexts/CartContext';
 import { formatCurrency } from '../../utils/currencyUtils';
 
@@ -16,26 +16,29 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
       ? product.variations[0]
       : { id: '1', name: 'Default', price: product.price || 0 }
   );
-  const [selectedIngredients, setSelectedIngredients] = useState<string[]>(
-    product.ingredients?.filter(ing => !ing.optional).map(ing => ing.id) || []
+  const [selectedIngredients, setSelectedIngredients] = useState<ProductIngredient[]>(
+    product.ingredients?.filter(ing => !ing.optional) || []
   );
   const [quantity, setQuantity] = useState(1);
 
   const { addItem } = useCart();
 
-  const toggleIngredient = (ingredientId: string) => {
-    setSelectedIngredients(prev =>
-      prev.includes(ingredientId)
-        ? prev.filter(id => id !== ingredientId)
-        : [...prev, ingredientId]
-    );
+  const toggleIngredient = (ingredient: ProductIngredient) => {
+    setSelectedIngredients(prev => {
+      const isSelected = prev.some(ing => ing.id === ingredient.id);
+      if (isSelected) {
+        return prev.filter(ing => ing.id !== ingredient.id);
+      } else {
+        return [...prev, ingredient];
+      }
+    });
   };
 
   const calculatePrice = () => {
     const basePrice = selectedVariation.price;
-    const extraCost = product.ingredients
-      ?.filter(ing => ing.optional && selectedIngredients.includes(ing.id))
-      .reduce((sum, ing) => sum + (ing.extra_cost || 0), 0) || 0;
+    const extraCost = selectedIngredients
+      .filter(ing => ing.optional)
+      .reduce((sum, ing) => sum + (ing.extra_cost || 0), 0);
 
     return (basePrice + extraCost) * quantity;
   };
@@ -220,8 +223,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                   >
                       <input
                         type="checkbox"
-                        checked={selectedIngredients.includes(ingredient.id)}
-                        onChange={() => toggleIngredient(ingredient.id)}
+                        checked={selectedIngredients.some(ing => ing.id === ingredient.id)}
+                        onChange={() => toggleIngredient(ingredient)}
                         disabled={!ingredient.optional}
                         className="w-4 h-4 rounded"
                         style={{ accentColor: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}

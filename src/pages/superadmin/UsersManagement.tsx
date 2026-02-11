@@ -13,6 +13,7 @@ import {
   Copy,
   ChevronLeft,
   ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
 import { User as UserType, Restaurant } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -289,6 +290,32 @@ export const UsersManagement: React.FC = () => {
     const userToDelete = users.find(u => u.id === userId);
     if (!userToDelete) return;
 
+    // 1. VERIFICAR SI ES PROPIETARIO DE ALGÚN RESTAURANTE
+    const { data: ownedRestaurants, error: ownershipError } = await supabase
+      .from('restaurants')
+      .select('id, name, domain')
+      .eq('owner_id', userId);
+
+    if (ownershipError) {
+      console.error('Error checking restaurant ownership:', ownershipError);
+      showToast('error', 'Error', 'No se pudo verificar la propiedad de restaurantes');
+      return;
+    }
+
+    // 2. SI ES PROPIETARIO, MOSTRAR ADVERTENCIA Y BLOQUEAR ELIMINACIÓN
+    if (ownedRestaurants && ownedRestaurants.length > 0) {
+      setDeleteBlockedDetails({
+        user: userToDelete,
+        cannotDelete: true,
+        reason: 'owner',
+        message: `Este usuario es propietario de ${ownedRestaurants.length} restaurante(s). Debes transferir la propiedad antes de eliminarlo.`,
+        ownedRestaurants: ownedRestaurants
+      });
+      setShowCannotDeleteModal(true);
+      return;
+    }
+
+    // 3. SI NO ES PROPIETARIO, PROCEDER CON CONFIRMACIÓN NORMAL
     if (!confirm(`¿Estás seguro de que quieres eliminar el usuario ${userToDelete.email}? Esta acción no se puede deshacer.`)) {
       return;
     }
@@ -1064,8 +1091,157 @@ export const UsersManagement: React.FC = () => {
         )}
       </Modal>
 
-      {/* Cannot Delete + Transfer Ownership: mantengo tus modales (no los reescribo completos aquí) */}
-      {/* Si quieres que los deje 1:1, pégame el resto del archivo y te lo devuelvo íntegro. */}
+      {/* Cannot Delete Modal */}
+      <Modal
+        isOpen={showCannotDeleteModal}
+        onClose={() => {
+          setShowCannotDeleteModal(false);
+          setDeleteBlockedDetails(null);
+        }}
+        title="No se puede eliminar usuario"
+        size="lg"
+      >
+        {deleteBlockedDetails && (
+          <div className="space-y-6">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-800">
+                    {deleteBlockedDetails.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {deleteBlockedDetails.ownedRestaurants && deleteBlockedDetails.ownedRestaurants.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                  Restaurantes donde es propietario:
+                </h4>
+                <div className="space-y-2">
+                  {deleteBlockedDetails.ownedRestaurants.map((restaurant: any) => (
+                    <div
+                      key={restaurant.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Building className="w-5 h-5 text-gray-500" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{restaurant.name}</p>
+                          <p className="text-xs text-gray-500">{restaurant.domain}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleTransferOwnership(restaurant)}
+                      >
+                        Transferir Propiedad
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowCannotDeleteModal(false);
+                  setDeleteBlockedDetails(null);
+                }}
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Transfer Ownership Modal */}
+      <Modal
+        isOpen={showTransferModal}
+        onClose={() => {
+          setShowTransferModal(false);
+          setRestaurantToTransfer(null);
+          setSelectedNewOwner('');
+        }}
+        title="Transferir Propiedad del Restaurante"
+        size="md"
+      >
+        {restaurantToTransfer && (
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <Building className="w-6 h-6 text-blue-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-blue-900">
+                    {restaurantToTransfer.name}
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    {restaurantToTransfer.domain}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Seleccionar nuevo propietario
+              </label>
+              <select
+                value={selectedNewOwner}
+                onChange={(e) => setSelectedNewOwner(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Seleccionar usuario...</option>
+                {availableUsers.map((user: any) => (
+                  <option key={user.id} value={user.id}>
+                    {user.full_name || user.email} ({user.email})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-2">
+                Solo se muestran usuarios con rol de restaurante o superadmin asociados a este restaurante
+              </p>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-amber-800">
+                    <strong>Nota importante:</strong> Esta acción transferirá todos los permisos de propietario al nuevo usuario seleccionado.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setRestaurantToTransfer(null);
+                  setSelectedNewOwner('');
+                }}
+                disabled={transferLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                onClick={confirmTransferOwnership}
+                disabled={!selectedNewOwner || transferLoading}
+              >
+                {transferLoading ? 'Transfiriendo...' : 'Confirmar Transferencia'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

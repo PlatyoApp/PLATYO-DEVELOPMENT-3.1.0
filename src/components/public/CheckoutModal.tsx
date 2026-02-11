@@ -256,16 +256,55 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
     setLoading(true);
 
     try {
-      const { data: allOrders } = await supabase
+      // 1. REGISTRAR O ENCONTRAR CLIENTE (por teléfono + restaurant_id)
+      let customerId = null;
+
+      // Buscar cliente existente por teléfono en este restaurante
+      const { data: existingCustomer } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('restaurant_id', restaurant.id)
+        .eq('phone', customerInfo.phone)
+        .maybeSingle();
+
+      if (existingCustomer) {
+        // Cliente ya existe, usar su ID
+        customerId = existingCustomer.id;
+      } else {
+        // Cliente nuevo, crear registro
+        const { data: newCustomer, error: customerError } = await supabase
+          .from('customers')
+          .insert({
+            restaurant_id: restaurant.id,
+            name: customerInfo.name,
+            phone: customerInfo.phone,
+            email: customerInfo.email || null,
+            address: deliveryMode === 'delivery' ? customerInfo.address : null,
+            delivery_instructions: customerInfo.notes || null
+          })
+          .select('id')
+          .single();
+
+        if (customerError) {
+          console.error('Error creating customer:', customerError);
+          // No bloqueamos el pedido si falla el registro del cliente
+        } else {
+          customerId = newCustomer.id;
+        }
+      }
+
+      // 2. GENERAR NÚMERO DE ORDEN (optimizado - solo buscar el máximo)
+      const { data: maxOrderData } = await supabase
         .from('orders')
         .select('order_number')
-        .eq('restaurant_id', restaurant.id);
+        .eq('restaurant_id', restaurant.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       let nextOrderNumber = '#RES-1001';
-      if (allOrders && allOrders.length > 0) {
-        const numericOrderNumbers = allOrders
+      if (maxOrderData && maxOrderData.length > 0) {
+        const numericOrderNumbers = maxOrderData
           .map(o => {
-            // Match both formats: #RES-XXXX and RES-XXXX for backwards compatibility
             const match = o.order_number?.match(/#?RES-(\d+)/);
             return match ? parseInt(match[1]) : null;
           })
@@ -279,9 +318,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
 
       const totalAmount = getTotal() + (deliveryMode === 'delivery' ? deliveryCost : 0) + tip;
 
+      // 3. CREAR PEDIDO (con customer_id si está disponible)
       const orderData = {
         restaurant_id: restaurant.id,
         order_number: nextOrderNumber,
+        customer_id: customerId,
         customer_name: customerInfo.name,
         customer_phone: customerInfo.phone,
         customer_email: customerInfo.email || null,
@@ -318,6 +359,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
 
       if (error) {
         console.error('Error creating order:', error);
+
+        // Si es error de duplicado, reintentar con nuevo número
+        if (error.message?.includes('unique') || error.message?.includes('duplicate')) {
+          showToast('info', 'Reintentando', 'Generando nuevo número de orden...', 3000, { primary: primaryColor, secondary: secondaryTextColor });
+          setLoading(false);
+          setTimeout(() => handleConfirmOrder(), 500);
+          return;
+        }
+
         showToast('error', 'Error', 'No se pudo crear el pedido. Por favor intenta nuevamente.', 5000, { primary: primaryColor, secondary: secondaryTextColor });
         setLoading(false);
         return;

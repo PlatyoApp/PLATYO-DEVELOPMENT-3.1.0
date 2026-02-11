@@ -24,7 +24,7 @@ export interface ProductVariation {
   compare_at_price?: number;
 }
 
-interface ProductIngredient {
+export interface ProductIngredient {
   id: string;
   name: string;
   optional: boolean;
@@ -102,7 +102,7 @@ export interface CartItem {
   product: Product;
   variation: ProductVariation;
   quantity: number;
-  selected_ingredients: string[];
+  selected_ingredients: ProductIngredient[];
   special_notes?: string;
 }
 
