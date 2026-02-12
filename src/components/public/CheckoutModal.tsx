@@ -262,26 +262,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
       // Buscar cliente existente por teléfono en este restaurante
       const { data: existingCustomer } = await supabase
         .from('customers')
-        .select('id, total_orders')
+        .select('id')
         .eq('restaurant_id', restaurant.id)
         .eq('phone', customerInfo.phone)
         .maybeSingle();
 
       if (existingCustomer) {
-        // Cliente ya existe, actualizar información y contador
+        // Cliente ya existe, usar su ID
         customerId = existingCustomer.id;
-
-        await supabase
-          .from('customers')
-          .update({
-            name: customerInfo.name,
-            email: customerInfo.email || null,
-            address: deliveryMode === 'delivery' ? customerInfo.address : null,
-            delivery_instructions: customerInfo.notes || null,
-            total_orders: (existingCustomer.total_orders || 0) + 1,
-            last_order_at: new Date().toISOString()
-          })
-          .eq('id', existingCustomer.id);
       } else {
         // Cliente nuevo, crear registro
         const { data: newCustomer, error: customerError } = await supabase
@@ -292,9 +280,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
             phone: customerInfo.phone,
             email: customerInfo.email || null,
             address: deliveryMode === 'delivery' ? customerInfo.address : null,
-            delivery_instructions: customerInfo.notes || null,
-            total_orders: 1,
-            last_order_at: new Date().toISOString()
+            delivery_instructions: customerInfo.notes || null
           })
           .select('id')
           .single();
