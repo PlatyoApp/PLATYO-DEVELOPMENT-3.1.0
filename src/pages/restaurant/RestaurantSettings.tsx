@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Save, Globe, Clock, Truck, QrCode, Palette, Bell, MapPin, HelpCircle, Send, Eye, Calendar, Mail, Phone, Building, Store, Megaphone, Upload, Image as ImageIcon, FileText, DollarSign, Star, ChevronDown, ExternalLink } from 'lucide-react';
+import { Save, Globe, Clock, Truck, QrCode, Palette, Bell, MapPin, HelpCircle, Send, Eye, Calendar, Mail, Phone, Building, Store, Megaphone, Upload, Image as ImageIcon, FileText, DollarSign, Star, ChevronDown, ExternalLink, Trash2 } from 'lucide-react';
 import { colombianDepartments, colombianCitiesByDepartment, validateNIT, formatNIT } from '../../utils/colombianCities';
 import { Restaurant } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -2704,104 +2704,95 @@ export const RestaurantSettings: React.FC = () => {
 
   <p className="text-xs text-gray-600 mb-4">{t('featured_products_hint')}</p>
 
-  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
-    {(() => {
-      const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
+  {(() => {
+    const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
+    const productIdSet = new Set(products.map((p: any) => p.id));
+    const validSelectedIds = selectedIds.filter((id) => productIdSet.has(id));
 
-      // ✅ Lookup O(1)
-      const productIdSet = new Set(products.map((p: any) => p.id));
-      const validSelectedIds = selectedIds.filter((id) => productIdSet.has(id));
+    if (validSelectedIds.length !== selectedIds.length) {
+      queueMicrotask(() => {
+        updateFormData('settings.promo.featured_product_ids', validSelectedIds);
+      });
+    }
 
-      // ✅ Auto-cleanup fuera del render (pero aquí seguimos sin hooks; al menos evitamos setTimeout)
-      //    Si necesitas mantenerlo aquí sí o sí, usa microtask y solo si hay diferencia.
-      if (validSelectedIds.length !== selectedIds.length) {
-        queueMicrotask(() => {
-          updateFormData('settings.promo.featured_product_ids', validSelectedIds);
-        });
+    const selectedSet = new Set(validSelectedIds);
+    const selectedCount = validSelectedIds.length;
+
+    const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      if (!value) return;
+
+      if (selectedSet.has(value)) {
+        const newIds = validSelectedIds.filter((id) => id !== value);
+        updateFormData('settings.promo.featured_product_ids', newIds);
+      } else if (selectedCount < 5) {
+        const newIds = [...validSelectedIds, value];
+        updateFormData('settings.promo.featured_product_ids', newIds);
       }
 
-      // ✅ Para includes O(1)
-      const selectedSet = new Set(validSelectedIds);
-      const selectedCount = validSelectedIds.length;
+      e.target.value = '';
+    };
 
-      const toggle = (productId: string) => {
-        let newIds = validSelectedIds;
+    const removeProduct = (productId: string) => {
+      const newIds = validSelectedIds.filter((id) => id !== productId);
+      updateFormData('settings.promo.featured_product_ids', newIds);
+    };
 
-        if (selectedSet.has(productId)) {
-          // deseleccionar
-          newIds = validSelectedIds.filter((id) => id !== productId);
-        } else {
-          // seleccionar (máx 5)
-          if (selectedCount >= 5) return;
-          newIds = [...validSelectedIds, productId];
-        }
+    const selectedProducts = products.filter((p: any) => selectedSet.has(p.id));
 
-        updateFormData('settings.promo.featured_product_ids', newIds);
-      };
-
-      return (
-        <div className="space-y-2">
-          {products.map((product: any) => {
-            const isSelected = selectedSet.has(product.id);
-            const canSelect = selectedCount < 5 || isSelected;
-
-            return (
-              <label
-                key={product.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-orange-50 border-orange-300'
-                    : canSelect
-                    ? 'bg-white border-gray-200 hover:border-gray-300'
-                    : 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  disabled={!canSelect}
-                  onChange={() => toggle(product.id)}
-                  className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                />
-
-                {product.images?.[0] && (
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-12 h-12 object-cover rounded-lg"
-                  />
-                )}
-
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {product.name}
-                  </p>
-                  {/* ✅ descripción eliminada */}
-                </div>
-
-                {isSelected && <Badge variant="success">{t('featured_products_label')}</Badge>}
-              </label>
-            );
-          })}
-
-          {products.length === 0 && (
-            <p className="text-center text-gray-500 text-sm py-4">{t('noProductsAdded')}</p>
-          )}
+    return (
+      <div className="space-y-4">
+        <div>
+          <select
+            onChange={handleSelectChange}
+            value=""
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            disabled={selectedCount >= 5}
+          >
+            <option value="">
+              {selectedCount >= 5 ? 'Máximo alcanzado (5/5)' : 'Selecciona un producto...'}
+            </option>
+            {products
+              .filter((p: any) => !selectedSet.has(p.id))
+              .map((product: any) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+          </select>
         </div>
-      );
-    })()}
-  </div>
 
-  <p className="text-xs text-gray-600">
-    {(() => {
-      const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
-      const productIdSet = new Set(products.map((p: any) => p.id));
-      const validCount = selectedIds.reduce((acc, id) => acc + (productIdSet.has(id) ? 1 : 0), 0);
-      return `${validCount} ${t('featured_products_selected')}`;
-    })()}
-  </p>
+        {selectedProducts.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-700">Productos destacados seleccionados:</p>
+            {selectedProducts.map((product: any) => (
+              <div
+                key={product.id}
+                className="flex items-center justify-between p-2 bg-orange-50 border border-orange-200 rounded-lg"
+              >
+                <span className="text-sm text-gray-900">{product.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeProduct(product.id)}
+                  className="text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {products.length === 0 && (
+          <p className="text-center text-gray-500 text-sm py-4">{t('noProductsAdded')}</p>
+        )}
+
+        <p className="text-xs text-gray-600">
+          {selectedCount} {t('featured_products_selected')}
+        </p>
+      </div>
+    );
+  })()}
 </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

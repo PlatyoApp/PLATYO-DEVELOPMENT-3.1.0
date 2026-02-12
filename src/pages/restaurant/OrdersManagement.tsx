@@ -1056,9 +1056,14 @@ Tu pedido está en estado: *${order.status}*.`;
                     <small style="font-size: 9px; color: #666;">${item.variation.name}</small>
                     ${
                       item.selected_ingredients && item.selected_ingredients.length > 0
-                        ? `<br><small style="font-size: 9px; color: #0066cc;">+ ${
-                            item.selected_ingredients.map((ing: any) => (typeof ing === 'object' ? ing.name : ing)).join(', ')
-                          }</small>`
+                        ? item.selected_ingredients
+                            .filter((ing: any) => ing.optional === true)
+                            .map((ing: any) => {
+                              const ingName = typeof ing === 'object' ? ing.name : ing;
+                              const ingCost = ing.extra_cost > 0 ? ` (+${formatCurrency(ing.extra_cost, currency)})` : '';
+                              return `<br><small style="font-size: 9px; color: #0066cc;">+ ${ingName}${ingCost}</small>`;
+                            })
+                            .join('')
                         : ''
                     }
                     ${item.special_notes ? `<br><small style="font-size: 9px; color: #666;">${t('noteLabel')}: ${item.special_notes}</small>` : ''}
@@ -1277,6 +1282,38 @@ Tu pedido está en estado: *${order.status}*.`;
       quantity: it.quantity,
       total_price: it.total_price
     }));
+
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('id, total_orders')
+      .eq('restaurant_id', restaurant.id)
+      .eq('phone', orderForm.customer.phone)
+      .maybeSingle();
+
+    if (existingCustomer) {
+      await supabase
+        .from('customers')
+        .update({
+          name: orderForm.customer.name,
+          email: orderForm.customer.email || null,
+          address: orderForm.customer.address || null,
+          delivery_instructions: orderForm.customer.delivery_instructions || null,
+          total_orders: (existingCustomer.total_orders || 0) + 1,
+          last_order_at: new Date().toISOString()
+        })
+        .eq('id', existingCustomer.id);
+    } else {
+      await supabase.from('customers').insert({
+        restaurant_id: restaurant.id,
+        name: orderForm.customer.name,
+        phone: orderForm.customer.phone,
+        email: orderForm.customer.email || null,
+        address: orderForm.customer.address || null,
+        delivery_instructions: orderForm.customer.delivery_instructions || null,
+        total_orders: 1,
+        last_order_at: new Date().toISOString()
+      });
+    }
 
     const newOrder = {
       restaurant_id: restaurant.id,
@@ -1901,9 +1938,16 @@ Tu pedido está en estado: *${order.status}*.`;
                       <p className="text-sm text-gray-600">{item.variation?.name || 'Variación'}</p>
 
                       {item.selected_ingredients && item.selected_ingredients.length > 0 && (
-                        <p className="text-sm text-blue-600 mt-1">
-                          + {item.selected_ingredients.map((ing: any) => (typeof ing === 'object' ? ing.name : ing)).join(', ')}
-                        </p>
+                        <div className="text-sm text-blue-600 mt-1">
+                          {item.selected_ingredients
+                            .filter((ing: any) => ing.optional === true)
+                            .map((ing: any, idx: number) => (
+                              <div key={idx}>
+                                + {typeof ing === 'object' ? ing.name : ing}
+                                {ing.extra_cost > 0 && ` (+${formatCurrency(ing.extra_cost, currency)})`}
+                              </div>
+                            ))}
+                        </div>
                       )}
 
                       {item.special_notes && (

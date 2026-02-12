@@ -70,13 +70,13 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ isOpen, onClose, onChe
               <div className="space-y-4">
                 {items.map((item, index) => {
                   let extraCost = 0;
-                  const additionalIngredients: string[] = [];
+                  const additionalIngredients: Array<{name: string, cost: number}> = [];
 
                   if (item.selected_ingredients && item.product.ingredients) {
                     item.product.ingredients.forEach(ing => {
                       if (ing.optional && item.selected_ingredients.includes(ing.id)) {
                         extraCost += ing.extra_cost || 0;
-                        additionalIngredients.push(ing.name);
+                        additionalIngredients.push({name: ing.name, cost: ing.extra_cost || 0});
                       }
                     });
                   }
@@ -108,12 +108,17 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ isOpen, onClose, onChe
                           {item.variation.name}
                         </p>
                         {additionalIngredients.length > 0 && (
-                          <p
+                          <div
                             className="text-xs mb-1 italic"
                             style={{ color: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}
                           >
-                            + {additionalIngredients.join(', ')}
-                          </p>
+                            {additionalIngredients.map((ing, idx) => (
+                              <div key={idx}>
+                                + {ing.name}
+                                {ing.cost > 0 && ` (+${formatCurrency(ing.cost, currency)})`}
+                              </div>
+                            ))}
+                          </div>
                         )}
                         <p
                           className="font-bold text-sm"
