@@ -343,8 +343,7 @@ export const PublicMenu: React.FC = () => {
 
   const featuredProducts = useMemo(() => {
     const featured = products.filter((p) => p.is_featured).slice(0, 5);
-    console.log('[PublicMenu] Featured products count:', featured.length);
-    console.log('[PublicMenu] Featured products:', featured.map(p => ({ id: p.id, name: p.name, is_featured: p.is_featured })));
+    console.log('[PublicMenu] Featured products:', featured.length);
     return featured;
   }, [products]);
   const cartItemsCount = cartItems.reduce(
@@ -941,32 +940,6 @@ export const PublicMenu: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* FEATURED PRODUCTS CAROUSEL */}
-        {featuredProducts.length > 0 && (
-          <div className="mb-8">
-            <div className="px-4 mb-4">
-              <h2
-                className="text-2xl font-bold flex items-center gap-2"
-                style={{
-                  color: primaryColor,
-                  fontFamily: theme.primary_font || 'Poppins'
-                }}
-              >
-                <Star className="w-6 h-6 fill-current" />
-                Productos Destacados
-              </h2>
-            </div>
-            <AnimatedCarousel
-              products={featuredProducts}
-              primaryColor={primaryColor}
-              textColor={textColor}
-              cardBackgroundColor={cardBackgroundColor}
-              fontFamily={theme.primary_font || 'Poppins'}
-              onProductClick={(product) => setSelectedProduct(product)}
-            />
-          </div>
-        )}
         {filteredProducts.length === 0 && loadingPhase === 'complete' && !showInitialSkeletons ? (
           <div className="text-center py-12">
             <p
