@@ -2692,6 +2692,123 @@ export const RestaurantSettings: React.FC = () => {
                 </div>
               </div>
 
+ {/* Featured Products Selector */}
+<div className="space-y-3 bg-white border border-gray-200 rounded-lg p-6">
+  <div className="flex items-center gap-2 mb-2">
+    <Star className="w-5 h-5 text-orange-600" />
+    <label className="block text-sm font-medium text-gray-700">
+      {t('featured_products_title')}
+    </label>
+    <label className="block text-sm font-medium text-gray-700">(Max. 5)</label>
+  </div>
+
+  <p className="text-xs text-gray-600 mb-4">{t('featured_products_hint')}</p>
+
+  {(() => {
+    const selectedIds: string[] = formData.settings.promo?.featured_product_ids || [];
+    const productIdSet = new Set(products.map((p: any) => p.id));
+    const validSelectedIds = selectedIds.filter((id) => productIdSet.has(id));
+
+    if (validSelectedIds.length !== selectedIds.length) {
+      queueMicrotask(() => {
+        updateFormData('settings.promo.featured_product_ids', validSelectedIds);
+      });
+    }
+
+    const selectedSet = new Set(validSelectedIds);
+    const selectedCount = validSelectedIds.length;
+
+    const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = e.target.value;
+      if (!value) return;
+
+      if (selectedSet.has(value)) {
+        const newIds = validSelectedIds.filter((id) => id !== value);
+        updateFormData('settings.promo.featured_product_ids', newIds);
+      } else if (selectedCount < 5) {
+        const newIds = [...validSelectedIds, value];
+        updateFormData('settings.promo.featured_product_ids', newIds);
+      }
+
+      e.target.value = '';
+    };
+
+    const removeProduct = (productId: string) => {
+      const newIds = validSelectedIds.filter((id) => id !== productId);
+      updateFormData('settings.promo.featured_product_ids', newIds);
+    };
+
+    const selectedProducts = products.filter((p: any) => selectedSet.has(p.id));
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <select
+            onChange={handleSelectChange}
+            value=""
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            disabled={selectedCount >= 5}
+          >
+            <option value="">
+              {selectedCount >= 5 ? 'Máximo alcanzado (5/5)' : 'Selecciona un producto...'}
+            </option>
+            {products
+              .filter((p: any) => !selectedSet.has(p.id))
+              .map((product: any) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+          </select>
+        </div>
+
+        {selectedProducts.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-700">Productos destacados seleccionados:</p>
+            {selectedProducts.map((product: any) => (
+              <div
+                key={product.id}
+                className="flex items-center justify-between p-2 bg-orange-50 border border-orange-200 rounded-lg"
+              >
+                <span className="text-sm text-gray-900">{product.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeProduct(product.id)}
+                  className="text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {products.length === 0 && (
+          <p className="text-center text-gray-500 text-sm py-4">{t('noProductsAdded')}</p>
+        )}
+
+        <p className="text-xs text-gray-600">
+          {selectedCount} {t('featured_products_selected')}
+        </p>
+      </div>
+    );
+  })()}
+</div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <Megaphone className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-blue-800 font-medium">{t('featured_products_tip_title')}</p>
+                    <ul className="text-xs text-blue-700 mt-2 space-y-1 list-disc list-inside">
+                      <li>{t('featured_products_tip1')}</li>
+                      <li>{t('featured_products_tip2')}</li>
+                      <li>{t('featured_products_tip3')}</li>
+                      <li>{t('featured_products_tip4')}</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

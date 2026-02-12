@@ -38,12 +38,7 @@ export const AnimatedCarousel: React.FC<AnimatedCarouselProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  if (products.length === 0) {
-    console.log('[AnimatedCarousel] No products to display');
-    return null;
-  }
-
-  console.log('[AnimatedCarousel] Rendering carousel with', products.length, 'products');
+  if (products.length === 0) return null;
 
   // **1. Lógica de dimensiones mejorada:**
   const isMobile = containerWidth < 768;
