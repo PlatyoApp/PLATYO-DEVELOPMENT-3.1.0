@@ -1352,7 +1352,7 @@ Tu pedido está en estado: *${order.status}*.`;
   };
 
   const handleUpdateOrder = async () => {
-    if (!editingOrder) return;
+    if (!editingOrder || !restaurant) return;
 
     if (!orderForm.customer.name.trim() || !orderForm.customer.phone.trim()) {
       showToast('error', t('errorTitle'), t('namePhoneRequiredError'), 4000);
@@ -1377,6 +1377,38 @@ Tu pedido está en estado: *${order.status}*.`;
       quantity: it.quantity,
       total_price: it.total_price
     }));
+
+    // Actualizar o crear cliente
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('id, total_orders')
+      .eq('restaurant_id', restaurant.id)
+      .eq('phone', orderForm.customer.phone)
+      .maybeSingle();
+
+    if (existingCustomer) {
+      await supabase
+        .from('customers')
+        .update({
+          name: orderForm.customer.name,
+          email: orderForm.customer.email || null,
+          address: orderForm.customer.address || null,
+          delivery_instructions: orderForm.customer.delivery_instructions || null,
+          last_order_at: new Date().toISOString()
+        })
+        .eq('id', existingCustomer.id);
+    } else {
+      await supabase.from('customers').insert({
+        restaurant_id: restaurant.id,
+        name: orderForm.customer.name,
+        phone: orderForm.customer.phone,
+        email: orderForm.customer.email || null,
+        address: orderForm.customer.address || null,
+        delivery_instructions: orderForm.customer.delivery_instructions || null,
+        total_orders: 1,
+        last_order_at: new Date().toISOString()
+      });
+    }
 
     const payload = {
       customer_name: orderForm.customer.name,
