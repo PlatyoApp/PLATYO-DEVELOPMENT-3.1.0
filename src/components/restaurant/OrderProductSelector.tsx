@@ -150,9 +150,21 @@ export const OrderProductSelector: React.FC<OrderProductSelectorProps> = ({
                 <p className="font-medium text-sm">{item.product.name}</p>
                 <p className="text-xs text-gray-600">{item.variation.name}</p>
                 {item.selected_ingredients && item.selected_ingredients.length > 0 && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    + {item.selected_ingredients.map(ing => typeof ing === 'object' ? ing.name : ing).join(', ')}
-                  </p>
+                  <div className="mt-1 space-y-0.5">
+                    {item.selected_ingredients.map((ing, idx) => {
+                      const ingredient = typeof ing === 'object' ? ing : null;
+                      return (
+                        <p key={idx} className="text-xs text-blue-600">
+                          + {ingredient?.name || ing}
+                          {ingredient?.extra_cost ? (
+                            <span className="text-gray-500 ml-1">
+                              (+{formatCurrency(ingredient.extra_cost, currency)})
+                            </span>
+                          ) : null}
+                        </p>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-3">
