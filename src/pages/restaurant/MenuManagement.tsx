@@ -11,7 +11,8 @@ import {
   ExternalLink,
   Copy,
   CheckCircle,
-  Archive
+  Archive,
+  Star
 } from 'lucide-react';
 
 import { Category, Product, Subscription } from '../../types';
@@ -784,6 +785,56 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
+  const handleToggleFeatured = async (productId: string, currentFeaturedState: boolean) => {
+    if (!restaurant?.id) return;
+
+    try {
+      // Si queremos marcar como destacado, verificar que no haya más de 5
+      if (!currentFeaturedState) {
+        const { count, error: countError } = await supabase
+          .from('products')
+          .select('id', { count: 'exact', head: true })
+          .eq('restaurant_id', restaurant.id)
+          .eq('is_featured', true);
+
+        if (countError) throw countError;
+
+        if (count && count >= 5) {
+          showToast('warning', 'Límite alcanzado', 'Solo puedes tener máximo 5 productos destacados', 3000);
+          return;
+        }
+      }
+
+      // Toggle el estado
+      const { error } = await supabase
+        .from('products')
+        .update({ is_featured: !currentFeaturedState, updated_at: new Date().toISOString() })
+        .eq('id', productId);
+
+      if (error) throw error;
+
+      invalidateCache();
+      await loadMenuData();
+
+      // Obtener el nuevo conteo de destacados
+      const { count: newCount, error: newCountError } = await supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('restaurant_id', restaurant.id)
+        .eq('is_featured', true);
+
+      if (!newCountError && newCount !== null) {
+        const message = !currentFeaturedState
+          ? `Producto destacado. ${newCount}/5 destacados`
+          : `Producto removido de destacados. ${newCount}/5 destacados`;
+        showToast('success', 'Destacado actualizado', message, 3000);
+      }
+    } catch (error: any) {
+      console.error('Error toggling featured status:', error);
+      showToast('error', 'Error', 'No se pudo actualizar el producto destacado');
+    }
+  };
+
   const handleSaveProduct = async (productData: any) => {
     if (!restaurant) return;
 
@@ -1213,6 +1264,15 @@ export const MenuManagement: React.FC = () => {
                         className="text-blue-600 hover:text-blue-700"
                       >
                         <Copy className="w-4 h-4 text-blue-600" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleFeatured(product.id, product.is_featured)}
+                        className={product.is_featured ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-400 hover:text-yellow-500'}
+                      >
+                        <Star className={`w-4 h-4 ${product.is_featured ? 'fill-yellow-500' : ''}`} />
                       </Button>
 
                       <Button
