@@ -331,17 +331,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
         order_type: deliveryMode,
         table_number: deliveryMode === 'dine-in' ? customerInfo.tableNumber : null,
         delivery_address: deliveryMode === 'delivery' ? `${customerInfo.address}, ${customerInfo.city}` : null,
-        items: items.map(item => ({
-          product_id: item.product.id,
-          product_name: item.product.name,
-          variation_id: item.variation.id,
-          variation_name: item.variation.name,
-          quantity: item.quantity,
-          unit_price: item.variation.price,
-          total_price: item.variation.price * item.quantity,
-          special_notes: item.special_notes,
-          selected_ingredients: item.selected_ingredients
-        })),
+        items: items.map(item => {
+          const extraIngredientsCost = item.selected_ingredients
+            ? item.selected_ingredients
+                .filter(ing => ing.optional)
+                .reduce((sum, ing) => sum + (ing.extra_cost || 0), 0)
+            : 0;
+          const unitPriceWithExtras = item.variation.price + extraIngredientsCost;
+
+          return {
+            product_id: item.product.id,
+            product_name: item.product.name,
+            variation_id: item.variation.id,
+            variation_name: item.variation.name,
+            quantity: item.quantity,
+            unit_price: unitPriceWithExtras,
+            total_price: unitPriceWithExtras * item.quantity,
+            special_notes: item.special_notes,
+            selected_ingredients: item.selected_ingredients
+          };
+        }),
         subtotal: getTotal(),
         delivery_cost: deliveryMode === 'delivery' ? deliveryCost : 0,
         total_amount: totalAmount,
@@ -1034,28 +1043,47 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, r
                 </h3>
 
                 <div className="space-y-3 mb-4">
-                  {items.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex justify-between p-3 rounded-lg"
-                    style={{
-                      borderRadius: theme.button_style === 'rounded' ? '0.5rem' : '0.25rem',
-                      border: `1px solid ${primaryColor}`,
-                      backgroundColor: 'transparent'
-                    }}
-                  >
-                      <div className="flex-1">
-                        <p className="font-medium" style={{fontFamily: theme.secondary_font || 'Poppins'}}>{item.product.name}</p>
-                        <p className="text-sm" style={{ color: secondaryTextColor, fontFamily: theme.secondary_font || 'Poppins' }}>{item.variation.name} x {item.quantity}</p>
-                        {item.special_notes && (
-                          <p className="text-xs text-gray-500 italic mt-1"style={{fontFamily: theme.secondary_font || 'Poppins'}}>Nota: {item.special_notes}</p>
-                        )}
+                  {items.map((item, index) => {
+                    const extraIngredientsCost = item.selected_ingredients
+                      ? item.selected_ingredients
+                          .filter(ing => ing.optional)
+                          .reduce((sum, ing) => sum + (ing.extra_cost || 0), 0)
+                      : 0;
+                    const itemTotal = (item.variation.price + extraIngredientsCost) * item.quantity;
+
+                    return (
+                      <div
+                        key={index}
+                        className="flex justify-between p-3 rounded-lg"
+                        style={{
+                          borderRadius: theme.button_style === 'rounded' ? '0.5rem' : '0.25rem',
+                          border: `1px solid ${primaryColor}`,
+                          backgroundColor: 'transparent'
+                        }}
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium" style={{fontFamily: theme.secondary_font || 'Poppins'}}>{item.product.name}</p>
+                          <p className="text-sm" style={{ color: secondaryTextColor, fontFamily: theme.secondary_font || 'Poppins' }}>{item.variation.name} x {item.quantity}</p>
+                          {item.selected_ingredients && item.selected_ingredients.filter(ing => ing.optional).length > 0 && (
+                            <div className="text-xs mt-1" style={{ color: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}>
+                              {item.selected_ingredients.filter(ing => ing.optional).map((ing, idx) => (
+                                <div key={idx} className="italic">
+                                  + {ing.name}
+                                  {ing.extra_cost > 0 && ` (+${formatCurrency(ing.extra_cost, currency)})`}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {item.special_notes && (
+                            <p className="text-xs text-gray-500 italic mt-1"style={{fontFamily: theme.secondary_font || 'Poppins'}}>Nota: {item.special_notes}</p>
+                          )}
+                        </div>
+                        <p className="font-semibold" style={{ color: 'var(--accent-color)', fontFamily: theme.secondary_font || 'Poppins' }}>
+                          {formatCurrency(itemTotal, currency)}
+                        </p>
                       </div>
-                      <p className="font-semibold" style={{ color: 'var(--accent-color)', fontFamily: theme.secondary_font || 'Poppins' }}>
-                        {formatCurrency(item.variation.price * item.quantity, currency)}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="border-t pt-4 space-y-2" style={{ borderColor: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}>

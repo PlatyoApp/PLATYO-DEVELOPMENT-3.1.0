@@ -118,6 +118,18 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    if (newOwner.restaurant_id !== restaurantId) {
+      return new Response(
+        JSON.stringify({
+          error: 'The new owner must be associated with this restaurant'
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     if (newOwner.role !== 'restaurant_owner' && newOwner.role !== 'superadmin') {
       return new Response(
         JSON.stringify({

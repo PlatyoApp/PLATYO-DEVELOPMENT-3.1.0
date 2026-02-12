@@ -49,12 +49,16 @@ Deno.serve(async (req: Request) => {
 
     const { data: restaurant, error: restaurantError } = await supabase
       .from('restaurants')
-      .select('name')
+      .select('name, owner_id')
       .eq('id', restaurantId)
       .single();
 
     if (restaurantError) {
       throw new Error('Restaurant not found');
+    }
+
+    if (restaurant.owner_id) {
+      throw new Error('Cannot delete restaurant with an owner. Please transfer ownership first.');
     }
 
     const { data: orders } = await supabase

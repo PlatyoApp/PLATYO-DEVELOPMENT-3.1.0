@@ -159,6 +159,7 @@ export const AnimatedCarousel: React.FC<AnimatedCarouselProps> = ({
                 <img
                   src={product.images[0] || ''}
                   alt={product.name}
+                  loading="lazy"
                   className="w-full rounded-t-xl object-cover"
                   // Altura de la imagen dinámica
                   style={{

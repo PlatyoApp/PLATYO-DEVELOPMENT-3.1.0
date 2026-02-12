@@ -72,9 +72,10 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({ isOpen, onClose, onChe
                   let extraCost = 0;
                   const additionalIngredients: Array<{name: string, cost: number}> = [];
 
-                  if (item.selected_ingredients && item.product.ingredients) {
-                    item.product.ingredients.forEach(ing => {
-                      if (ing.optional && item.selected_ingredients.includes(ing.id)) {
+                  if (item.selected_ingredients) {
+                    const selectedIngredientIds = item.selected_ingredients.map(ing => ing.id);
+                    item.selected_ingredients.forEach(ing => {
+                      if (ing.optional) {
                         extraCost += ing.extra_cost || 0;
                         additionalIngredients.push({name: ing.name, cost: ing.extra_cost || 0});
                       }
