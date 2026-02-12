@@ -50,10 +50,15 @@ export const CartPreview: React.FC<CartPreviewProps> = ({
   const currency = restaurant.settings.currency || 'USD';
 
   let extraCost = 0;
-  if (item.selected_ingredients && item.product.ingredients) {
-    extraCost = item.product.ingredients
-      .filter(ing => ing.optional && item.selected_ingredients.includes(ing.id))
-      .reduce((sum, ing) => sum + (ing.extra_cost || 0), 0);
+  const additionalIngredients: Array<{name: string, cost: number}> = [];
+
+  if (item.selected_ingredients) {
+    item.selected_ingredients.forEach(ing => {
+      if (ing.optional) {
+        extraCost += ing.extra_cost || 0;
+        additionalIngredients.push({name: ing.name, cost: ing.extra_cost || 0});
+      }
+    });
   }
   const itemTotal = (item.variation.price + extraCost) * item.quantity;
 
@@ -151,6 +156,19 @@ export const CartPreview: React.FC<CartPreviewProps> = ({
               >
                 {item.variation.name} × {item.quantity}
               </p>
+              {additionalIngredients.length > 0 && (
+                <div
+                  className="text-xs mb-1 italic"
+                  style={{ color: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}
+                >
+                  {additionalIngredients.map((ing, idx) => (
+                    <div key={idx}>
+                      + {ing.name}
+                      {ing.cost > 0 && ` (+${formatCurrency(ing.cost, currency)})`}
+                    </div>
+                  ))}
+                </div>
+              )}
               <p
                 className="font-bold text-sm"
                 style={{
