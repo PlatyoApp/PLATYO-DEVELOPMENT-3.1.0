@@ -236,6 +236,33 @@ export const PublicMenu: React.FC = () => {
       setHasMoreProducts(transformedInitialProducts.length === PRODUCTS_PER_PAGE);
       setLoadingPhase('complete');
       console.log('[PublicMenu] Initial menu loading complete!');
+
+      // Clean up invalid featured product IDs
+      if (restaurantData.settings?.promo?.featured_product_ids?.length) {
+        const validProductIds = transformedInitialProducts.map((p: any) => p.id);
+        const configuredIds = restaurantData.settings.promo.featured_product_ids;
+        const invalidIds = configuredIds.filter((id: string) => !validProductIds.includes(id));
+
+        if (invalidIds.length > 0) {
+          console.log('[PublicMenu] Found', invalidIds.length, 'invalid featured product IDs, cleaning up...');
+          const validFeaturedIds = configuredIds.filter((id: string) => validProductIds.includes(id));
+
+          await supabase
+            .from('restaurants')
+            .update({
+              settings: {
+                ...restaurantData.settings,
+                promo: {
+                  ...restaurantData.settings.promo,
+                  featured_product_ids: validFeaturedIds
+                }
+              }
+            })
+            .eq('id', restaurantData.id);
+
+          console.log('[PublicMenu] Cleaned up invalid product IDs');
+        }
+      }
     } catch (err) {
       console.error('[PublicMenu] Error loading menu:', err);
       setError('Error al cargar el menú');
@@ -342,10 +369,28 @@ export const PublicMenu: React.FC = () => {
   }, [products, selectedCategory, searchTerm]);
 
   const featuredProducts = useMemo(() => {
-    const featured = products.filter((p) => p.is_featured).slice(0, 5);
-    console.log('[PublicMenu] Featured products:', featured.length);
-    return featured;
-  }, [products]);
+    console.log('[PublicMenu] Calculating featured products. Total products:', products.length);
+    console.log('[PublicMenu] Products with is_featured:', products.filter((p) => p.is_featured).length);
+    console.log('[PublicMenu] Featured IDs from settings:', restaurant?.settings.promo?.featured_product_ids);
+
+    if (!restaurant?.settings.promo?.featured_product_ids?.length) {
+      const featured = products.filter((p) => p.is_featured).slice(0, 5);
+      console.log('[PublicMenu] Using is_featured flag, found:', featured.length, 'products');
+      return featured;
+    }
+
+    const featuredIds = restaurant.settings.promo.featured_product_ids;
+    const validFeatured = products.filter((p) => featuredIds.includes(p.id));
+    console.log('[PublicMenu] Using featured IDs from settings, found:', validFeatured.length, 'valid products');
+
+    if (validFeatured.length === 0) {
+      const featured = products.filter((p) => p.is_featured).slice(0, 5);
+      console.log('[PublicMenu] No valid IDs, falling back to is_featured flag, found:', featured.length);
+      return featured;
+    }
+
+    return validFeatured.slice(0, 5);
+  }, [products, restaurant?.settings.promo?.featured_product_ids]);
   const cartItemsCount = cartItems.reduce(
     (sum, item) => sum + item.quantity,
     0
