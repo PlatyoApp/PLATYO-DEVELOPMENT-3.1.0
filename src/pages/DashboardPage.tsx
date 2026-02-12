@@ -15,6 +15,7 @@ import { RestaurantAnalytics } from './restaurant/RestaurantAnalytics';
 import { CategoriesManagement } from './restaurant/CategoriesManagement';
 import { SubscriptionPlans } from './restaurant/SubscriptionPlans';
 import { CustomersManagement } from './restaurant/CustomersManagement';
+import { FeaturedProductsManagement } from './restaurant/FeaturedProductsManagement';
 import { SupportTicketsManagement } from './superadmin/SupportTicketsManagement';
 
 export const DashboardPage: React.FC = () => {
@@ -54,6 +55,8 @@ export const DashboardPage: React.FC = () => {
           return <MenuManagement />;
         case 'categories':
           return <CategoriesManagement />;
+        case 'featured':
+          return <FeaturedProductsManagement />;
         case 'orders':
           return <OrdersManagement />;
         case 'customers':

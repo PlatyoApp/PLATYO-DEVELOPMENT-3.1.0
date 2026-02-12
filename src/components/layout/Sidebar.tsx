@@ -10,7 +10,8 @@ import {
   Home,
   FolderOpen,
   Crown,
-  HelpCircle
+  HelpCircle,
+  Star
 } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
@@ -175,6 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'dashboard', name: t('dashboard'), icon: Home },
       { id: 'categories', name: t('categories'), icon: FolderOpen },
       { id: 'menu', name: t('menu'), icon: Menu },
+      { id: 'featured', name: 'Destacados', icon: Star },
       { id: 'orders', name: t('orders'), icon: ShoppingBag },
       { id: 'customers', name: t('customers'), icon: Users },
       { id: 'subscription', name: t('subscription'), icon: Crown },
