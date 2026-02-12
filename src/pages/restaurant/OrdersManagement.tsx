@@ -1285,33 +1285,19 @@ Tu pedido está en estado: *${order.status}*.`;
 
     const { data: existingCustomer } = await supabase
       .from('customers')
-      .select('id, total_orders')
+      .select('id')
       .eq('restaurant_id', restaurant.id)
       .eq('phone', orderForm.customer.phone)
       .maybeSingle();
 
-    if (existingCustomer) {
-      await supabase
-        .from('customers')
-        .update({
-          name: orderForm.customer.name,
-          email: orderForm.customer.email || null,
-          address: orderForm.customer.address || null,
-          delivery_instructions: orderForm.customer.delivery_instructions || null,
-          total_orders: (existingCustomer.total_orders || 0) + 1,
-          last_order_at: new Date().toISOString()
-        })
-        .eq('id', existingCustomer.id);
-    } else {
+    if (!existingCustomer) {
       await supabase.from('customers').insert({
         restaurant_id: restaurant.id,
         name: orderForm.customer.name,
         phone: orderForm.customer.phone,
         email: orderForm.customer.email || null,
         address: orderForm.customer.address || null,
-        delivery_instructions: orderForm.customer.delivery_instructions || null,
-        total_orders: 1,
-        last_order_at: new Date().toISOString()
+        delivery_instructions: orderForm.customer.delivery_instructions || null
       });
     }
 
@@ -1378,35 +1364,22 @@ Tu pedido está en estado: *${order.status}*.`;
       total_price: it.total_price
     }));
 
-    // Actualizar o crear cliente
+    // Crear cliente si no existe
     const { data: existingCustomer } = await supabase
       .from('customers')
-      .select('id, total_orders')
+      .select('id')
       .eq('restaurant_id', restaurant.id)
       .eq('phone', orderForm.customer.phone)
       .maybeSingle();
 
-    if (existingCustomer) {
-      await supabase
-        .from('customers')
-        .update({
-          name: orderForm.customer.name,
-          email: orderForm.customer.email || null,
-          address: orderForm.customer.address || null,
-          delivery_instructions: orderForm.customer.delivery_instructions || null,
-          last_order_at: new Date().toISOString()
-        })
-        .eq('id', existingCustomer.id);
-    } else {
+    if (!existingCustomer) {
       await supabase.from('customers').insert({
         restaurant_id: restaurant.id,
         name: orderForm.customer.name,
         phone: orderForm.customer.phone,
         email: orderForm.customer.email || null,
         address: orderForm.customer.address || null,
-        delivery_instructions: orderForm.customer.delivery_instructions || null,
-        total_orders: 1,
-        last_order_at: new Date().toISOString()
+        delivery_instructions: orderForm.customer.delivery_instructions || null
       });
     }
 
