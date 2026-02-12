@@ -864,68 +864,6 @@ export const PublicMenu: React.FC = () => {
           </div>
         </div>
       </header>
-      {(() => {
-        const shouldShow = !searchTerm && !showInitialSkeletons && featuredProducts.length > 0;
-        console.log('[PublicMenu] Featured section check:', {
-          searchTerm,
-          showInitialSkeletons,
-          featuredProductsLength: featuredProducts.length,
-          shouldShow
-        });
-        return shouldShow;
-      })() && (
-        <div className="text-left px-[15px]  md:px-[210px] md:-mt-[9px] md:-mb-[30px] scale-[0.85]">
-          {' '}
-          {/*DF:pasar toda esta seccion completa*/}
-          <h3
-            className="text-xl"
-            style={{
-              color: primaryTextColor,
-              fontFamily: theme.secondary_font || 'Poppins',
-            }}
-          >
-            {t('featured_products_title')}
-          </h3>
-          <h2
-            className="text-5xl font-bold "
-            style={{
-              color: primaryTextColor,
-              fontFamily: theme.primary_font || 'Poppins',
-            }}
-          >
-            {t('presenting_featured_products1')}
-          </h2>
-          <div className="flex items-left justify-left gap-1">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Star
-                key={i}
-                className="w-5 h-5 fill-current"
-                style={{ color: primaryColor }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-      {/* ANIMATED CAROUSEL */}
-      {(() => {
-        const shouldShow = !searchTerm && !showInitialSkeletons && featuredProducts.length > 0;
-        console.log('[PublicMenu] Carousel section check:', {
-          searchTerm,
-          showInitialSkeletons,
-          featuredProductsLength: featuredProducts.length,
-          shouldShow
-        });
-        return shouldShow;
-      })() && (
-        <AnimatedCarousel
-          products={featuredProducts}
-          primaryColor={primaryColor}
-          textColor={textColor}
-          cardBackgroundColor={cardBackgroundColor}
-          fontFamily={theme.secondary_font || 'Poppins'}
-          onProductClick={setSelectedProduct}
-        />
-      )}
       {/* PRODUCTS LIST */}
       <main
         className="max-w-6xl mx-auto pb-[74px] md:-mt-[20px] md:pb-[125px] py-1  relative z-10 "
