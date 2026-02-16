@@ -401,7 +401,7 @@ export const OrdersManagement: React.FC = () => {
         .eq('is_active', true),
       supabase
         .from('products')
-        .select('id, name, description, price, image_url, images, category_ids, variations, ingredients, is_available, status, restaurant_id')
+        .select('id, name, description, price, image_url, images, category_id, variations, ingredients, is_available, status, restaurant_id')
         .eq('restaurant_id', restaurant.id)
         .eq('is_available', true)
         .order('name', { ascending: true })
