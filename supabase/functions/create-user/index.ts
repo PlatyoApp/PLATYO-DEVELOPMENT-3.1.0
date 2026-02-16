@@ -21,17 +21,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
-
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -44,7 +33,24 @@ Deno.serve(async (req: Request) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
+
+    const userClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        },
+        global: {
+          headers: {
+            Authorization: authHeader
+          }
+        }
+      }
+    );
+
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
 
     if (userError || !user) {
       return new Response(
@@ -56,7 +62,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: userData, error: userDataError } = await supabaseClient
+    const { data: userData, error: userDataError } = await userClient
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -71,6 +77,17 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
 
     const body: CreateUserRequest = await req.json();
     const { email, role, restaurant_id } = body;
