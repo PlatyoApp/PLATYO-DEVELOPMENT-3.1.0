@@ -118,10 +118,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (newOwner.restaurant_id !== restaurantId) {
+    if (newOwner.restaurant_id !== restaurantId && newOwner.role !== 'superadmin') {
       return new Response(
         JSON.stringify({
-          error: 'The new owner must be associated with this restaurant'
+          error: 'El nuevo propietario debe estar asociado a este restaurante o ser superadmin'
         }),
         {
           status: 400,
@@ -133,7 +133,7 @@ Deno.serve(async (req: Request) => {
     if (newOwner.role !== 'restaurant_owner' && newOwner.role !== 'superadmin') {
       return new Response(
         JSON.stringify({
-          error: 'The new owner must have role "restaurant_owner" or "superadmin"'
+          error: 'El nuevo propietario debe tener rol "restaurant_owner" o "superadmin"'
         }),
         {
           status: 400,
@@ -144,7 +144,38 @@ Deno.serve(async (req: Request) => {
 
     if (restaurant.owner_id === newOwnerId) {
       return new Response(
-        JSON.stringify({ error: 'This user is already the owner of the restaurant' }),
+        JSON.stringify({ error: 'Este usuario ya es el propietario del restaurante' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    console.log('Checking if new owner already owns another restaurant');
+    const { data: existingOwnership, error: ownershipError } = await supabaseClient
+      .from('restaurants')
+      .select('id, name')
+      .eq('owner_id', newOwnerId)
+      .neq('id', restaurantId)
+      .maybeSingle();
+
+    if (ownershipError && ownershipError.code !== 'PGRST116') {
+      console.error('Error checking existing ownership:', ownershipError);
+      return new Response(
+        JSON.stringify({ error: 'Error al verificar propiedad existente' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    if (existingOwnership) {
+      return new Response(
+        JSON.stringify({
+          error: `Este usuario ya es propietario de otro restaurante: "${existingOwnership.name}". Cada usuario solo puede ser propietario de un restaurante a la vez.`
+        }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -293,7 +293,7 @@ export const UsersManagement: React.FC = () => {
     // 1. VERIFICAR SI ES PROPIETARIO DE ALGÚN RESTAURANTE
     const { data: ownedRestaurants, error: ownershipError } = await supabase
       .from('restaurants')
-      .select('id, name, domain')
+      .select('id, name, domain, slug')
       .eq('owner_id', userId);
 
     if (ownershipError) {
@@ -302,13 +302,13 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
-    // 2. SI ES PROPIETARIO, MOSTRAR ADVERTENCIA Y BLOQUEAR ELIMINACIÓN
+    // 2. SI ES PROPIETARIO, BLOQUEAR ELIMINACIÓN Y SOLICITAR TRANSFERENCIA
     if (ownedRestaurants && ownedRestaurants.length > 0) {
       setDeleteBlockedDetails({
         user: userToDelete,
         cannotDelete: true,
         reason: 'owner',
-        message: `Este usuario es propietario de ${ownedRestaurants.length} restaurante(s). Debes transferir la propiedad antes de eliminarlo.`,
+        message: `No se puede eliminar este usuario porque es propietario de ${ownedRestaurants.length} restaurante(s). Primero debes transferir la propiedad a otro usuario.`,
         ownedRestaurants: ownedRestaurants
       });
       setShowCannotDeleteModal(true);
@@ -362,18 +362,45 @@ export const UsersManagement: React.FC = () => {
     setSelectedNewOwner('');
 
     try {
+      // Cargar usuarios que:
+      // 1. Estén asignados al mismo restaurante O sean superadmin
+      // 2. No sean el propietario actual
+      // 3. No sean propietarios de otro restaurante
       const { data: usersData, error } = await supabase
         .from('users')
-        .select('id, full_name, email, role')
-        .eq('restaurant_id', restaurant.id)
+        .select('id, full_name, email, role, restaurant_id')
         .neq('id', restaurant.owner_id || '')
         .in('role', ['restaurant_owner', 'superadmin']);
 
       if (error) throw error;
 
-      setAvailableUsers(usersData || []);
+      // Obtener lista de usuarios que ya son propietarios de otros restaurantes
+      const { data: ownersData } = await supabase
+        .from('restaurants')
+        .select('owner_id')
+        .neq('id', restaurant.id)
+        .not('owner_id', 'is', null);
+
+      const existingOwnerIds = new Set((ownersData || []).map(r => r.owner_id));
+
+      // Filtrar usuarios:
+      // - Que estén en el mismo restaurante O sean superadmin
+      // - Que NO sean propietarios de otro restaurante
+      const filteredUsers = (usersData || []).filter(user => {
+        const isSameRestaurant = user.restaurant_id === restaurant.id;
+        const isSuperAdmin = user.role === 'superadmin';
+        const isNotOwnerElsewhere = !existingOwnerIds.has(user.id);
+
+        return (isSameRestaurant || isSuperAdmin) && isNotOwnerElsewhere;
+      });
+
+      setAvailableUsers(filteredUsers);
       setShowCannotDeleteModal(false);
       setShowTransferModal(true);
+
+      if (filteredUsers.length === 0) {
+        showToast('warning', 'Sin usuarios disponibles', 'No hay usuarios disponibles para transferir la propiedad. Primero crea o asigna un usuario a este restaurante.', 5000);
+      }
     } catch (error) {
       console.error('Error loading users:', error);
       showToast('error', 'Error', 'Error al cargar usuarios disponibles');
@@ -1191,21 +1218,37 @@ export const UsersManagement: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Seleccionar nuevo propietario
               </label>
-              <select
-                value={selectedNewOwner}
-                onChange={(e) => setSelectedNewOwner(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">Seleccionar usuario...</option>
-                {availableUsers.map((user: any) => (
-                  <option key={user.id} value={user.id}>
-                    {user.full_name || user.email} ({user.email})
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-2">
-                Solo se muestran usuarios con rol de restaurante o superadmin asociados a este restaurante
-              </p>
+              {availableUsers.length === 0 ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">No hay usuarios disponibles</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        Debes crear o asignar al menos un usuario a este restaurante antes de poder transferir la propiedad.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <select
+                    value={selectedNewOwner}
+                    onChange={(e) => setSelectedNewOwner(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Seleccionar usuario...</option>
+                    {availableUsers.map((user: any) => (
+                      <option key={user.id} value={user.id}>
+                        {user.full_name || user.email} - {user.role === 'superadmin' ? 'Superadmin' : 'Restaurante'} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Solo se muestran usuarios del mismo restaurante o superadmins que no sean propietarios de otro restaurante
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -1234,7 +1277,7 @@ export const UsersManagement: React.FC = () => {
               <Button
                 variant="primary"
                 onClick={confirmTransferOwnership}
-                disabled={!selectedNewOwner || transferLoading}
+                disabled={!selectedNewOwner || transferLoading || availableUsers.length === 0}
               >
                 {transferLoading ? 'Transfiriendo...' : 'Confirmar Transferencia'}
               </Button>
