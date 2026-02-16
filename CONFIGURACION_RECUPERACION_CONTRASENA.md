@@ -36,15 +36,22 @@ http://localhost:5173/login
 - La aplicación llama a `supabase.auth.resetPasswordForEmail(email, { redirectTo: '...' })`
 
 ### 2. Supabase Envía Email
-- Supabase envía un email con un enlace como:
-  ```
-  https://platyoapp-platyo-dev-6h2h.bolt.host/reset-password#access_token=xxx&refresh_token=yyy&type=recovery
-  ```
+Supabase puede enviar el enlace en dos formatos:
+
+**Flujo PKCE (nuevo):**
+```
+https://platyoapp-platyo-dev-6h2h.bolt.host/reset-password?code=bf48836d-f593-4b7e-a171-5262a35e5159
+```
+
+**Flujo Legacy (antiguo):**
+```
+https://platyoapp-platyo-dev-6h2h.bolt.host/reset-password#access_token=xxx&refresh_token=yyy&type=recovery
+```
 
 ### 3. Usuario Hace Click en el Enlace
 - El navegador abre la página `/reset-password`
-- La aplicación extrae los tokens del hash de la URL
-- Se establece una sesión temporal usando `supabase.auth.setSession()`
+- **Si es flujo PKCE:** La aplicación extrae el `code` y lo intercambia por una sesión usando `supabase.auth.exchangeCodeForSession(code)`
+- **Si es flujo legacy:** La aplicación extrae los tokens del hash y establece la sesión usando `supabase.auth.setSession()`
 
 ### 4. Usuario Cambia su Contraseña
 - Con la sesión temporal, el usuario puede llamar a `supabase.auth.updateUser()`
@@ -59,11 +66,22 @@ http://localhost:5173/login
 4. Ve a la pestaña "Console"
 5. Haz click en el enlace del email
 6. Deberías ver logs como:
-   ```
-   Current URL: https://platyoapp-platyo-dev-6h2h.bolt.host/reset-password#access_token=...
-   URL params: { hasAccessToken: true, hasRefreshToken: true, type: 'recovery' }
-   Session set successfully: {...}
-   ```
+
+**Si es flujo PKCE:**
+```
+Current URL: https://platyoapp-platyo-dev-6h2h.bolt.host/reset-password?code=bf48836d...
+Search: ?code=bf48836d...
+Found code in query params, exchanging for session...
+Session created successfully from code: {...}
+```
+
+**Si es flujo legacy:**
+```
+Current URL: https://platyoapp-platyo-dev-6h2h.bolt.host/reset-password#access_token=...
+Hash: #access_token=...&refresh_token=...
+URL params: { hasAccessToken: true, hasRefreshToken: true, type: 'recovery' }
+Session set successfully: {...}
+```
 
 ## Si Sigue Sin Funcionar
 
