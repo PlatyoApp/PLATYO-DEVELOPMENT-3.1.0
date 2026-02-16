@@ -455,6 +455,7 @@ interface Translations {
 
   // Order Product Selector
   orderProducts: string;
+  searchProducts: string;
   selectProduct: string;
   selectProductOption: string;
   selectVariation: string;
@@ -1329,6 +1330,7 @@ const translations: Record<Language, Translations> = {
 
     // Order Product Selector
     orderProducts: 'Productos del Pedido',
+    searchProducts: 'Buscar productos...',
     selectProduct: 'Seleccionar producto',
     selectProductOption: 'Selecciona un producto',
     selectVariation: 'Seleccionar variación',
@@ -3002,6 +3004,7 @@ const translations: Record<Language, Translations> = {
 
     // Order Product Selector
     orderProducts: 'Order Products',
+    searchProducts: 'Search products...',
     selectProduct: 'Select product',
     selectProductOption: 'Select a product',
     selectVariation: 'Select variation',

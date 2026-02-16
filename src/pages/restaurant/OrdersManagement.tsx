@@ -396,15 +396,18 @@ export const OrdersManagement: React.FC = () => {
     const [{ data: categoriesData }, { data: productsData }] = await Promise.all([
       supabase
         .from('categories')
-        .select('id, name, description, display_order, is_active, restaurant_id')
+        .select('id, name, display_order')
         .eq('restaurant_id', restaurant.id)
-        .eq('is_active', true),
+        .eq('is_active', true)
+        .order('display_order', { ascending: true }),
       supabase
         .from('products')
-        .select('id, name, description, price, image_url, images, variations, ingredients, is_available, status, restaurant_id')
+        .select('id, name, variations, ingredients')
         .eq('restaurant_id', restaurant.id)
         .eq('is_available', true)
+        .eq('status', 'active')
         .order('name', { ascending: true })
+        .limit(100) // Limitar a 100 productos iniciales
     ]);
 
     setCategories(categoriesData || []);

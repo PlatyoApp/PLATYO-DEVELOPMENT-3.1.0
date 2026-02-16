@@ -29,6 +29,13 @@ export const OrderProductSelector: React.FC<OrderProductSelectorProps> = ({
   const [selectedVariationId, setSelectedVariationId] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+
+  const filteredProducts = React.useMemo(() => {
+    if (!productSearch.trim()) return products;
+    const search = productSearch.toLowerCase();
+    return products.filter(p => p.name.toLowerCase().includes(search));
+  }, [products, productSearch]);
 
   const selectedProduct = products.find(p => p.id === selectedProductId);
 
@@ -63,6 +70,13 @@ export const OrderProductSelector: React.FC<OrderProductSelectorProps> = ({
       {/* Add Product Form */}
       <div className="bg-gray-50 p-4 rounded-lg mb-4">
         <div className="grid grid-cols-1 gap-3">
+          <input
+            type="text"
+            placeholder={t('searchProducts') || 'Buscar productos...'}
+            value={productSearch}
+            onChange={(e) => setProductSearch(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+          />
           <select
             value={selectedProductId}
             onChange={(e) => {
@@ -72,7 +86,7 @@ export const OrderProductSelector: React.FC<OrderProductSelectorProps> = ({
             className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
           >
             <option value="">{t('selectProduct')}</option>
-            {products.map(product => (
+            {filteredProducts.map(product => (
               <option key={product.id} value={product.id}>
                 {product.name}
               </option>
