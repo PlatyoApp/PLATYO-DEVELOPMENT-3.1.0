@@ -106,7 +106,6 @@ Deno.serve(async (req: Request) => {
       data: {
         full_name: email.split('@')[0],
       },
-      redirectTo: `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '')}/reset-password`,
     });
 
     if (authError) {

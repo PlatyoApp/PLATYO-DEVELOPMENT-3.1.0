@@ -163,6 +163,20 @@ const PublicMenuGuard: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
 const AppRoutes: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const hashParams = new URLSearchParams(hash.substring(1));
+      const type = hashParams.get('type');
+      const accessToken = hashParams.get('access_token');
+
+      if (accessToken && (type === 'invite' || type === 'recovery')) {
+        window.location.href = `/reset-password${hash}`;
+      }
+    }
+  }, [location]);
 
   return (
     <Routes>
