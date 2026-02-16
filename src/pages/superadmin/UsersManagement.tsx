@@ -210,10 +210,11 @@ export const UsersManagement: React.FC = () => {
       : <Badge variant="warning">Sin verificar</Badge>;
   };
 
-  // Para “propietario”: ahora que users es paginado, no podemos saberlo buscando en users.
-  // Lo calculamos con restaurants (que sí tenemos completo).
-  const isUserOwner = useCallback((userId: string) => {
-    return restaurants.some(r => r.owner_id === userId);
+  // Verificar si el usuario es propietario de SU restaurante asignado
+  const isUserOwnerOfTheirRestaurant = useCallback((user: UserType) => {
+    if (!user.restaurant_id) return false;
+    const restaurant = restaurants.find(r => r.id === user.restaurant_id);
+    return restaurant?.owner_id === user.id;
   }, [restaurants]);
 
   // =============== Acciones (manteniendo tu lógica) ===============
@@ -366,11 +367,18 @@ export const UsersManagement: React.FC = () => {
       // 1. Estén asignados al mismo restaurante O sean superadmin
       // 2. No sean el propietario actual
       // 3. No sean propietarios de otro restaurante
-      const { data: usersData, error } = await supabase
+
+      let usersQuery = supabase
         .from('users')
         .select('id, full_name, email, role, restaurant_id')
-        .neq('id', restaurant.owner_id || '')
         .in('role', ['restaurant_owner', 'superadmin']);
+
+      // Solo excluir el propietario actual si existe
+      if (restaurant.owner_id) {
+        usersQuery = usersQuery.neq('id', restaurant.owner_id);
+      }
+
+      const { data: usersData, error } = await usersQuery;
 
       if (error) throw error;
 
@@ -757,7 +765,7 @@ export const UsersManagement: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {getRoleBadge(user.role)}
-                          {isUserOwner(user.id) && (
+                          {isUserOwnerOfTheirRestaurant(user) && (
                             <Badge variant="warning" className="flex items-center gap-1">
                               <Building className="w-3 h-3" />
                               Propietario
