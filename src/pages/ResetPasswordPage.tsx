@@ -66,11 +66,20 @@ export const ResetPasswordPage: React.FC = () => {
     setLoading(true);
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+
+      if (!sessionData.session) {
+        setError('Sesión no válida. Por favor solicita un nuevo enlace de recuperación.');
+        setLoading(false);
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({
         password: password
       });
 
       if (updateError) {
+        console.error('Error updating password:', updateError);
         if (updateError.message?.includes('weak') || updateError.message?.includes('easy to guess')) {
           setError('La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común.');
         } else {
@@ -80,12 +89,24 @@ export const ResetPasswordPage: React.FC = () => {
         return;
       }
 
+      try {
+        const userId = sessionData.session.user.id;
+        await supabase
+          .from('users')
+          .update({ require_password_change: false })
+          .eq('id', userId);
+      } catch (userErr) {
+        console.warn('Could not update user table (non-critical):', userErr);
+      }
+
+      await supabase.auth.signOut();
       setSuccess(true);
 
       setTimeout(() => {
         navigate('/login');
       }, 3000);
     } catch (err: any) {
+      console.error('Error in password reset:', err);
       setError(err.message || 'Error al cambiar la contraseña');
       setLoading(false);
     }
