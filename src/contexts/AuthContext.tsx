@@ -106,7 +106,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return loadUserData(userId, retryCount + 1);
         }
 
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         setUser(null);
         setRestaurant(null);
         setIsAuthenticated(false);
@@ -117,7 +117,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (!userData) {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         setUser(null);
         setRestaurant(null);
         setIsAuthenticated(false);
@@ -157,7 +157,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return loadUserData(userId, retryCount + 1);
       }
 
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       setUser(null);
       setRestaurant(null);
       setIsAuthenticated(false);
@@ -346,11 +346,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (userError) throw userError;
 
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
 
       return { success: true };
     } catch (error: any) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
 
       if (error?.message?.includes('weak') || error?.message?.includes('easy to guess')) {
         return { success: false, error: 'La contraseña es débil. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas y números.' };
@@ -392,16 +392,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     try {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (error) {
+      console.warn('Error during logout (will clear local session anyway):', error);
+    } finally {
       setUser(null);
       setRestaurant(null);
       setIsAuthenticated(false);
-      hasDataRef.current = false;
-      window.location.href = '/login';
-    } catch {
-      setUser(null);
-      setRestaurant(null);
-      setIsAuthenticated(false);
+      setRequirePasswordChange(false);
+      loadingUserRef.current = false;
       hasDataRef.current = false;
       window.location.href = '/login';
     }
