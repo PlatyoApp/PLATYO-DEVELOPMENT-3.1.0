@@ -193,8 +193,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
               </div>
             )}
 
-            {/* Ingredients */}
-            {product.ingredients && product.ingredients.length > 0 && (
+            {/* Ingredients - Only show optional ingredients */}
+            {product.ingredients && product.ingredients.filter(ing => ing.optional).length > 0 && (
               <div className="mb-6">
                 <h3
                   className="font-semibold mb-3"
@@ -204,17 +204,16 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                     fontFamily: theme.secondary_font || 'Poppins'
                   }}
                 >
-                  Ingredientes
+                  Ingredientes opcionales
                 </h3>
                 <div className="space-y-2">
-                  {product.ingredients.map(ingredient => (
+                  {product.ingredients.filter(ingredient => ingredient.optional).map(ingredient => (
                   <label
                     key={ingredient.id}
                     className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
                     style={{
                       borderColor: '#e5e7eb',
                       borderRadius: '8px',
-                      opacity: ingredient.optional ? 1 : 0.7,
                       transition: 'background-color 0.3s ease',
                       fontFamily: theme.secondary_font || 'Poppins'
                     }}
@@ -225,7 +224,6 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                         type="checkbox"
                         checked={selectedIngredients.some(ing => ing.id === ingredient.id)}
                         onChange={() => toggleIngredient(ingredient)}
-                        disabled={!ingredient.optional}
                         className="w-4 h-4 rounded"
                         style={{ accentColor: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}
                       />
@@ -236,9 +234,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                           color: secondaryTextColor
                         }}
                       >
-                        {ingredient.name} {!ingredient.optional && '(incluido)'}
+                        {ingredient.name}
                       </span>
-                      {ingredient.optional && ingredient.extra_cost && ingredient.extra_cost > 0 && (
+                      {ingredient.extra_cost && ingredient.extra_cost > 0 && (
                         <span
                           className="font-medium"
                           style={{

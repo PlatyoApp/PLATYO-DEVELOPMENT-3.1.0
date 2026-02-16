@@ -94,26 +94,28 @@ export const OrderProductSelector: React.FC<OrderProductSelectorProps> = ({
                 ))}
               </select>
 
-              {selectedProduct.ingredients && selectedProduct.ingredients.length > 0 && (
+              {selectedProduct.ingredients && selectedProduct.ingredients.filter(ing => ing.optional).length > 0 && (
                 <div className="border border-gray-300 rounded-lg p-3">
                   <p className="text-sm font-medium text-gray-700 mb-2">{t('additionalIngredients')}:</p>
                   <div className="space-y-2">
-                    {selectedProduct.ingredients.map(ingredient => (
-                      <label key={ingredient.id} className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedIngredients.includes(ingredient.id)}
-                          onChange={() => toggleIngredient(ingredient.id)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {ingredient.name}
-                          
-                            <span className="text-gray-500"> (+{formatCurrency(ingredient.extra_cost, currency)})</span>
-                        
-                        </span>
-                      </label>
-                    ))}
+                    {selectedProduct.ingredients
+                      .filter(ingredient => ingredient.optional)
+                      .map(ingredient => (
+                        <label key={ingredient.id} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedIngredients.includes(ingredient.id)}
+                            onChange={() => toggleIngredient(ingredient.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">
+                            {ingredient.name}
+                            {ingredient.extra_cost && ingredient.extra_cost > 0 && (
+                              <span className="text-gray-500"> (+{formatCurrency(ingredient.extra_cost, currency)})</span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
                   </div>
                 </div>
               )}

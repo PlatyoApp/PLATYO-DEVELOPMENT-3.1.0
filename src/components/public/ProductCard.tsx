@@ -33,9 +33,7 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(({ product, restauran
 
   const isOutOfStock = product.status === 'out_of_stock';
 
-  const includedIngredients = product.ingredients && Array.isArray(product.ingredients)
-    ? product.ingredients.filter((ing: any) => !ing.optional).map((ing: any) => ing.name)
-    : [];
+  // No longer showing ingredients in card view
 
   if (viewMode === 'editorial') {
     return (
@@ -115,18 +113,6 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(({ product, restauran
             >
               {product.description}
             </p>
-            {includedIngredients.length > 0 && (
-              <p
-                className="mb-4 text-sm italic line-clamp-1"
-                style={{
-                  fontFamily: theme.secondary_font || 'Inter',
-                  color: secondaryTextColor,
-                  opacity: 0.8,
-                }}
-              >
-                {includedIngredients.join(', ')}
-              </p>
-            )}
             <div className="flex items-center gap-2">
               {hasDiscount && (
                 <span
@@ -223,18 +209,6 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(({ product, restauran
           >
             {product.description}
           </p>
-          {includedIngredients.length > 0 && (
-            <p
-              className="text-xs italic line-clamp-1 mb-2"
-              style={{
-                fontFamily: theme.secondary_font || 'Inter',
-                color: secondaryTextColor,
-                opacity: 0.8,
-              }}
-            >
-              {includedIngredients.join(', ')}
-            </p>
-          )}
           <div className="flex items-center gap-2">
             {hasDiscount && (
               <span
@@ -343,18 +317,6 @@ const ProductCard: React.FC<ProductCardProps> = React.memo(({ product, restauran
         >
           {product.description}
         </p>
-        {includedIngredients.length > 0 && (
-          <p
-            className="text-xs italic line-clamp-1 mb-2"
-            style={{
-              fontFamily: theme.secondary_font || 'Inter',
-              color: secondaryTextColor,
-              opacity: 0.8,
-            }}
-          >
-            {includedIngredients.join(', ')}
-          </p>
-        )}
         <div className="flex items-center gap-2">
           {hasDiscount && (
             <span
