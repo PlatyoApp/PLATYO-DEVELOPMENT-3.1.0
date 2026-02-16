@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, ShoppingBag, Menu, Eye, TrendingUp, HelpCircle } from 'lucide-react';
+import { BarChart3, ShoppingBag, Menu, Eye, TrendingUp, HelpCircle, Package, FolderTree, Calendar, AlertCircle } from 'lucide-react';
 import { Order, Subscription } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { availablePlans } from '../../lib/plans';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Badge } from '../../components/ui/Badge';
 import { formatCurrency } from '../../utils/currencyUtils';
 import { TutorialModal } from '../../components/restaurant/TutorialModal';
+import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
+import { subscriptionService } from '../../services/subscriptionService';
 
 export const RestaurantDashboard: React.FC = () => {
   const { restaurant } = useAuth();
@@ -25,6 +28,9 @@ export const RestaurantDashboard: React.FC = () => {
 
   const [currentSubscription, setCurrentSubscription] = useState<Subscription | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
+
+  const { limits, status } = useSubscriptionLimits(restaurant?.id);
 
   useEffect(() => {
     if (!restaurant?.id) return;
@@ -149,6 +155,9 @@ export const RestaurantDashboard: React.FC = () => {
       } else {
         setCategoriesCount(categoriesCountRes.count ?? 0);
       }
+
+      const archivedInfo = await subscriptionService.getArchivedProducts(restaurant.id);
+      setArchivedCount(archivedInfo.count);
     } catch (err) {
       console.error('[Dashboard] Exception loading dashboard data:', err);
     }
@@ -198,6 +207,125 @@ export const RestaurantDashboard: React.FC = () => {
       </div>
 
       <TutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
+
+      {status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="expired"
+          planName={status.planName}
+          daysRemaining={status.daysRemaining}
+        />
+      )}
+
+      {archivedCount > 0 && (
+        <SubscriptionExpiredBanner
+          type="downgraded"
+          planName={status?.planName}
+          max={limits?.max_products}
+          resourceType="products"
+          archivedCount={archivedCount}
+          onViewArchived={() => window.location.href = '/dashboard/menu'}
+          dismissible
+        />
+      )}
+
+      {limits && status && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Subscription Status</h2>
+              <p className="text-sm text-gray-600 mt-1">Current plan: <span className="font-medium">{status.planName}</span></p>
+            </div>
+            <Badge variant={status.isExpired ? 'error' : status.daysRemaining <= 7 ? 'warning' : 'success'}>
+              {status.isExpired ? 'Expired' : status.daysRemaining <= 7 ? `${status.daysRemaining} days left` : 'Active'}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">Products Usage</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold text-gray-900">{limits.current_products}</span>
+                  <span className="text-sm text-gray-600">of {limits.max_products}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      limits.current_products >= limits.max_products
+                        ? 'bg-red-500'
+                        : limits.current_products >= limits.max_products * 0.8
+                        ? 'bg-yellow-500'
+                        : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (limits.current_products / limits.max_products) * 100)}%` }}
+                  />
+                </div>
+                {limits.current_products >= limits.max_products * 0.8 && (
+                  <p className="text-xs text-amber-700 flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {limits.current_products >= limits.max_products
+                      ? 'Limit reached - Consider upgrading'
+                      : 'Approaching limit'}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4 border border-green-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <FolderTree className="w-5 h-5 text-green-600" />
+                  <span className="text-sm font-medium text-gray-700">Categories Usage</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold text-gray-900">{limits.current_categories}</span>
+                  <span className="text-sm text-gray-600">of {limits.max_categories}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      limits.current_categories >= limits.max_categories
+                        ? 'bg-red-500'
+                        : limits.current_categories >= limits.max_categories * 0.8
+                        ? 'bg-yellow-500'
+                        : 'bg-green-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (limits.current_categories / limits.max_categories) * 100)}%` }}
+                  />
+                </div>
+                {limits.current_categories >= limits.max_categories * 0.8 && (
+                  <p className="text-xs text-amber-700 flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {limits.current_categories >= limits.max_categories
+                      ? 'Limit reached - Consider upgrading'
+                      : 'Approaching limit'}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Calendar className="w-4 h-4" />
+              <span>Plan ends: {new Date(status.endDate).toLocaleDateString()}</span>
+            </div>
+            <a
+              href="/dashboard/subscription"
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              Manage Subscription →
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 lg:gap-6">

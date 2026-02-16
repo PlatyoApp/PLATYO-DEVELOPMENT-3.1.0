@@ -10,11 +10,13 @@ import {
   Home,
   FolderOpen,
   Crown,
-  HelpCircle
+  HelpCircle,
+  Lock
 } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { supabase } from '../../lib/supabase';
 import { Subscription } from '../../types';
 
@@ -43,6 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, restaurant } = useAuth();
   const { t } = useLanguage();
+  const { status } = useSubscriptionLimits(restaurant?.id);
 
   const restaurantId = restaurant?.id ? String(restaurant.id) : null;
 
@@ -190,6 +193,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const tabs = user?.role === 'superadmin' ? superAdminTabs : restaurantTabs;
 
+  const isTabBlocked = (tabId: string): boolean => {
+    if (user?.role === 'superadmin') return false;
+    if (!status?.isExpired) return false;
+
+    const allowedTabs = ['dashboard', 'subscription'];
+    return !allowedTabs.includes(tabId);
+  };
+
   return (
     <>
       {isOpen && (
@@ -213,23 +224,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
+                const blocked = isTabBlocked(tab.id);
 
                 return (
                   <li key={tab.id}>
                     <button
                       onClick={() => {
+                        if (blocked) {
+                          onTabChange('subscription');
+                          onClose();
+                          return;
+                        }
                         onTabChange(tab.id);
                         onClose();
                       }}
                       className={`
-                        w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                        ${isActive
+                        w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                        ${isActive && !blocked
                           ? 'bg-blue-100 text-blue-700'
+                          : blocked
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
                           : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}
                       `}
+                      title={blocked ? 'Subscription expired - Renew to access this feature' : ''}
                     >
-                      <Icon className="w-5 h-5 mr-3" />
-                      {tab.name}
+                      <div className="flex items-center">
+                        <Icon className="w-5 h-5 mr-3" />
+                        {tab.name}
+                      </div>
+                      {blocked && <Lock className="w-4 h-4" />}
                     </button>
                   </li>
                 );

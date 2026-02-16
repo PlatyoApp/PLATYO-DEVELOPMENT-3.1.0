@@ -19,11 +19,14 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../hooks/useToast';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
+import { UpgradeModal } from '../../components/subscription/UpgradeModal';
 
 export const CategoriesManagement: React.FC = () => {
   const { restaurant } = useAuth();
@@ -66,6 +69,10 @@ export const CategoriesManagement: React.FC = () => {
 
   // Para cambiar de página mientras arrastras (evita spam)
   const dragPagingCooldownRef = useRef<number>(0);
+
+  // ===== Subscription Limits =====
+  const { limits, status, checkCategoryLimit, refresh: refreshLimits } = useSubscriptionLimits(restaurant?.id);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // ===== Debounce búsqueda =====
   useEffect(() => {
@@ -495,7 +502,12 @@ export const CategoriesManagement: React.FC = () => {
 
           <Button
             icon={Plus}
-            onClick={() => {
+            onClick={async () => {
+              const limitCheck = await checkCategoryLimit();
+              if (!limitCheck.canCreate) {
+                setShowUpgradeModal(true);
+                return;
+              }
               setEditingCategory(null);
               setFormData({ name: '', description: '', icon: '' });
               setShowModal(true);
@@ -505,6 +517,35 @@ export const CategoriesManagement: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="expired"
+          planName={status.planName}
+          daysRemaining={status.daysRemaining}
+        />
+      )}
+
+      {limits && !limits.canCreateCategory && !status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="limit_reached"
+          planName={status?.planName}
+          current={limits.current_categories}
+          max={limits.max_categories}
+          resourceType="categories"
+        />
+      )}
+
+      {limits && limits.current_categories >= limits.max_categories * 0.8 && limits.canCreateCategory && (
+        <SubscriptionExpiredBanner
+          type="near_limit"
+          planName={status?.planName}
+          current={limits.current_categories}
+          max={limits.max_categories}
+          resourceType="categories"
+          dismissible
+        />
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -583,7 +624,17 @@ export const CategoriesManagement: React.FC = () => {
             {categories.length === 0 ? t('createFirstCategory') : 'Try different search terms.'}
           </p>
           {categories.length === 0 && (
-            <Button icon={Plus} onClick={() => setShowModal(true)}>
+            <Button
+              icon={Plus}
+              onClick={async () => {
+                const limitCheck = await checkCategoryLimit();
+                if (!limitCheck.canCreate) {
+                  setShowUpgradeModal(true);
+                  return;
+                }
+                setShowModal(true);
+              }}
+            >
               {t('create')} {t('newCategory')}
             </Button>
           )}
@@ -806,6 +857,14 @@ export const CategoriesManagement: React.FC = () => {
         cancelText={t('cancel')}
         variant="danger"
         itemName={deleteConfirm.categoryName}
+      />
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={status?.planName || currentSubscription?.plan_name || 'Free'}
+        reason="categories"
+        currentLimit={limits?.max_categories}
       />
     </div>
   );

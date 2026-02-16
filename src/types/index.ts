@@ -56,7 +56,7 @@ export interface Product {
   dietary_restrictions?: string[];
   spice_level?: number;
   preparation_time?: string;
-  status: 'active' | 'inactive' | 'out_of_stock';
+  status: 'active' | 'inactive' | 'out_of_stock' | 'archived' | 'draft';
   sku?: string;
   is_available: boolean;
   is_featured: boolean;
@@ -351,4 +351,29 @@ export interface AuthContextType {
   changePassword?: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>;
   refreshRestaurantData: () => Promise<void>;
+}
+
+export interface SubscriptionLimits {
+  max_products: number;
+  max_categories: number;
+  current_products: number;
+  current_categories: number;
+  canCreateProduct: boolean;
+  canCreateCategory: boolean;
+}
+
+export interface SubscriptionStatus {
+  isExpired: boolean;
+  isActive: boolean;
+  daysRemaining: number;
+  planName: string;
+  endDate: string;
+}
+
+export interface LimitCheckResult {
+  canCreate: boolean;
+  canActivate: boolean;
+  currentCount: number;
+  maxCount: number;
+  message: string;
 }

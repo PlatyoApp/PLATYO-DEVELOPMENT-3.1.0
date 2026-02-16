@@ -11,7 +11,8 @@ import {
   ExternalLink,
   Copy,
   CheckCircle,
-  Archive
+  Archive,
+  ArchiveRestore
 } from 'lucide-react';
 
 import { Category, Product, Subscription } from '../../types';
@@ -19,12 +20,17 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../hooks/useToast';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { ProductForm } from '../../components/restaurant/ProductForm';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { formatCurrency } from '../../utils/currencyUtils';
+import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
+import { ProductActivationModal } from '../../components/subscription/ProductActivationModal';
+import { UpgradeModal } from '../../components/subscription/UpgradeModal';
+import { subscriptionService } from '../../services/subscriptionService';
 
 type ProductListItem = Pick<
   Product,
@@ -121,6 +127,15 @@ export const MenuManagement: React.FC = () => {
   // drag paging cooldown
   const dragPagingCooldownRef = useRef<number>(0);
 
+  // ====== Subscription Limits ======
+  const { limits, status, checkProductLimit, refresh: refreshLimits } = useSubscriptionLimits(restaurant?.id);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showFilterArchived, setShowFilterArchived] = useState(false);
+  const [archivedProducts, setArchivedProducts] = useState<Product[]>([]);
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [productToActivate, setProductToActivate] = useState<Product | null>(null);
+  const [showActivationModal, setShowActivationModal] = useState(false);
+
   // ====== Debounce búsqueda ======
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
@@ -136,6 +151,7 @@ export const MenuManagement: React.FC = () => {
   useEffect(() => {
     if (!restaurant?.id) return;
     loadSubscription();
+    loadArchivedProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurant?.id]);
 
@@ -155,6 +171,14 @@ export const MenuManagement: React.FC = () => {
     }
 
     setCurrentSubscription(data);
+  };
+
+  const loadArchivedProducts = async () => {
+    if (!restaurant?.id) return;
+
+    const info = await subscriptionService.getArchivedProducts(restaurant.id);
+    setArchivedProducts(info.products);
+    setArchivedCount(info.count);
   };
 
   // ============================
@@ -767,6 +791,25 @@ export const MenuManagement: React.FC = () => {
   // ====== Status / CRUD ======
   const handleChangeProductStatus = async (productId: string, newStatus: Product['status']) => {
     try {
+      const currentProduct = products.find((p) => p.id === productId);
+
+      if (currentProduct?.status === 'archived' && newStatus === 'active') {
+        const canActivate = await checkProductLimit();
+        if (!canActivate.canCreate) {
+          const fullProduct = await supabase
+            .from('products')
+            .select('*')
+            .eq('id', productId)
+            .single();
+
+          if (fullProduct.data) {
+            setProductToActivate(fullProduct.data as Product);
+            setShowActivationModal(true);
+          }
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('products')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -776,6 +819,8 @@ export const MenuManagement: React.FC = () => {
 
       invalidateCache();
       await loadMenuData();
+      await loadArchivedProducts();
+      await refreshLimits();
 
       showToast('success', t('statusUpdated'), `${t('productStatusChangedTo')} ${t(newStatus)}`, 3000);
     } catch (error: any) {
@@ -982,7 +1027,12 @@ export const MenuManagement: React.FC = () => {
 
           <Button
             icon={Plus}
-            onClick={() => {
+            onClick={async () => {
+              const limitCheck = await checkProductLimit();
+              if (!limitCheck.canCreate) {
+                setShowUpgradeModal(true);
+                return;
+              }
               setEditingProductId(null);
               setEditingProduct(null);
               setShowProductModal(true);
@@ -992,6 +1042,47 @@ export const MenuManagement: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="expired"
+          planName={status.planName}
+          daysRemaining={status.daysRemaining}
+        />
+      )}
+
+      {limits && !limits.canCreateProduct && !status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="limit_reached"
+          planName={status?.planName}
+          current={limits.current_products}
+          max={limits.max_products}
+          resourceType="products"
+        />
+      )}
+
+      {archivedCount > 0 && (
+        <SubscriptionExpiredBanner
+          type="downgraded"
+          planName={status?.planName}
+          max={limits?.max_products}
+          resourceType="products"
+          archivedCount={archivedCount}
+          onViewArchived={() => setShowFilterArchived(true)}
+          dismissible
+        />
+      )}
+
+      {limits && limits.current_products >= limits.max_products * 0.8 && limits.canCreateProduct && (
+        <SubscriptionExpiredBanner
+          type="near_limit"
+          planName={status?.planName}
+          current={limits.current_products}
+          max={limits.max_products}
+          resourceType="products"
+          dismissible
+        />
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -1323,6 +1414,98 @@ export const MenuManagement: React.FC = () => {
         variant="danger"
         itemName={deleteConfirm.productName}
       />
+
+      {productToActivate && (
+        <ProductActivationModal
+          isOpen={showActivationModal}
+          onClose={() => {
+            setShowActivationModal(false);
+            setProductToActivate(null);
+          }}
+          productToActivate={productToActivate}
+          restaurantId={restaurant?.id || ''}
+          onSuccess={async () => {
+            await loadMenuData();
+            await loadArchivedProducts();
+            await refreshLimits();
+            showToast('success', 'Product Activated', 'Product was successfully activated', 3000);
+          }}
+        />
+      )}
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={status?.planName || currentSubscription?.plan_name || 'Free'}
+        reason="products"
+        currentLimit={limits?.max_products}
+      />
+
+      {showFilterArchived && (
+        <Modal
+          isOpen={showFilterArchived}
+          onClose={() => setShowFilterArchived(false)}
+          title={`Archived Products (${archivedCount})`}
+        >
+          <div className="space-y-3">
+            {archivedProducts.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No archived products found</p>
+            ) : (
+              archivedProducts.map((product) => (
+                <div key={product.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    {product.images?.[0] ? (
+                      <img
+                        src={product.images[0]}
+                        alt={product.name}
+                        className="w-16 h-16 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center">
+                        <Package className="w-8 h-8 text-gray-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium text-gray-900 truncate">{product.name}</h4>
+                      <p className="text-sm text-gray-600 truncate">{product.description}</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {formatCurrency(product.price || 0, currency)}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      icon={ArchiveRestore}
+                      onClick={async () => {
+                        const canActivate = await checkProductLimit();
+                        if (!canActivate.canCreate) {
+                          setProductToActivate(product);
+                          setShowActivationModal(true);
+                          setShowFilterArchived(false);
+                        } else {
+                          const result = await subscriptionService.activateProduct(
+                            product.id,
+                            restaurant?.id || ''
+                          );
+                          if (result.success) {
+                            await loadMenuData();
+                            await loadArchivedProducts();
+                            await refreshLimits();
+                            showToast('success', 'Product Activated', 'Product was successfully activated', 3000);
+                          } else {
+                            showToast('error', 'Error', result.error || 'Failed to activate product');
+                          }
+                        }
+                      }}
+                    >
+                      Activate
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
