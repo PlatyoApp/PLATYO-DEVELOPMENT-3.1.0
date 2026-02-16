@@ -93,9 +93,10 @@ export const OrdersManagement: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
 
-  // ===== Products/Categories (for create/edit) =====
+  // ===== Products/Categories (for create/edit) with caching =====
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [catalogLoadedAt, setCatalogLoadedAt] = useState<number>(0);
   const [orderItems, setOrderItems] = useState<Order['items']>([]);
 
   // ===== Form =====
@@ -303,78 +304,60 @@ export const OrdersManagement: React.FC = () => {
     if (!restaurant?.id) return;
 
     try {
-      const statuses: Order['status'][] = ['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'];
-
-      const totalJob = supabase
-        .from('orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('restaurant_id', restaurant.id);
-
-      const statusJobs = statuses.map((st) =>
-        supabase
-          .from('orders')
-          .select('id', { count: 'exact', head: true })
-          .eq('restaurant_id', restaurant.id)
-          .eq('status', st)
-      );
-
-      // Today stats: orders + revenue delivered today
       const { startISO, endISO } = getTodayRangeISO();
 
-      const todayOrdersJob = supabase
+      // OPTIMIZED: Single query instead of 9+ queries
+      const { data: allOrders, error } = await supabase
         .from('orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('restaurant_id', restaurant.id)
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
+        .select('status, total, total_amount, created_at')
+        .eq('restaurant_id', restaurant.id);
 
-      // revenue today (delivered)
-      const todayDeliveredTotalJob = supabase
-        .from('orders')
-        .select('total, total_amount')
-        .eq('restaurant_id', restaurant.id)
-        .eq('status', 'delivered')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO);
+      if (error) {
+        console.error('Error loading stats:', error);
+        return;
+      }
 
-      // average order value for delivered (global)
-      const deliveredTotalsJob = supabase
-        .from('orders')
-        .select('total, total_amount')
-        .eq('restaurant_id', restaurant.id)
-        .eq('status', 'delivered');
+      const orders = allOrders || [];
 
-      const [totalRes, ...rest] = await Promise.all([
-        totalJob,
-        ...statusJobs,
-        todayOrdersJob,
-        todayDeliveredTotalJob,
-        deliveredTotalsJob
-      ]);
+      // Calculate all stats in memory (much faster than 9+ database queries)
+      const total = orders.length;
+      const counts: Record<string, number> = {
+        pending: 0,
+        confirmed: 0,
+        preparing: 0,
+        ready: 0,
+        delivered: 0,
+        cancelled: 0
+      };
 
-      const total = totalRes.count ?? 0;
+      let todayOrdersCount = 0;
+      let todayRevenue = 0;
+      let deliveredSum = 0;
+      let deliveredCount = 0;
 
-      const counts: Record<string, number> = {};
-      statuses.forEach((st, i) => {
-        counts[st] = (rest[i] as any)?.count ?? 0;
+      orders.forEach(order => {
+        // Count by status
+        if (order.status && counts.hasOwnProperty(order.status)) {
+          counts[order.status]++;
+        }
+
+        // Today's orders
+        if (order.created_at >= startISO && order.created_at <= endISO) {
+          todayOrdersCount++;
+          if (order.status === 'delivered') {
+            const amount = order.total ?? order.total_amount ?? 0;
+            todayRevenue += amount;
+          }
+        }
+
+        // All delivered orders for average
+        if (order.status === 'delivered') {
+          deliveredCount++;
+          deliveredSum += (order.total ?? order.total_amount ?? 0);
+        }
       });
 
-      const todayOrdersCount = (rest[statuses.length] as any)?.count ?? 0;
-
-      const todayDeliveredRows = (rest[statuses.length + 1] as any)?.data ?? [];
-      const todayRevenue = todayDeliveredRows.reduce(
-        (sum: number, row: any) => sum + (row.total ?? row.total_amount ?? 0),
-        0
-      );
-
-      const deliveredRows = (rest[statuses.length + 2] as any)?.data ?? [];
-      const deliveredCount = counts.delivered ?? 0;
-      const deliveredSum = deliveredRows.reduce(
-        (sum: number, row: any) => sum + (row.total ?? row.total_amount ?? 0),
-        0
-      );
       const averageOrderValue = deliveredCount > 0 ? deliveredSum / deliveredCount : 0;
-
       const completionRate = total ? ((counts.delivered ?? 0) / total) * 100 : 0;
 
       setOrderStats({
@@ -396,38 +379,53 @@ export const OrdersManagement: React.FC = () => {
   };
 
   // =============================
-  // 3) Products/Categories
+  // 3) Products/Categories - OPTIMIZED with caching
   // =============================
   const loadProductsAndCategories = async () => {
     if (!restaurant?.id) return;
 
+    // OPTIMIZED: Cache catalog for 5 minutes to avoid repeated loads
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+
+    if (catalogLoadedAt && (now - catalogLoadedAt < CACHE_DURATION)) {
+      // Catalog is still fresh, skip reload
+      return;
+    }
+
     const [{ data: categoriesData }, { data: productsData }] = await Promise.all([
       supabase
         .from('categories')
-        .select('*')
+        .select('id, name, description, display_order, is_active, restaurant_id')
         .eq('restaurant_id', restaurant.id)
         .eq('is_active', true),
       supabase
         .from('products')
-        .select('*')
+        .select('id, name, description, price, image_url, category_ids, variations, ingredients, is_available, restaurant_id')
         .eq('restaurant_id', restaurant.id)
         .eq('is_available', true)
     ]);
 
     setCategories(categoriesData || []);
     setProducts(productsData || []);
+    setCatalogLoadedAt(now);
   };
 
   // =============================
-  // 4) ORDER DETAIL (lazy) + FIX product names
+  // 4) ORDER DETAIL (lazy) + FIX product names - OPTIMIZED
   // =============================
   const enrichItemsWithCatalog = (items: any[]): any[] => {
-    // Toma product_id y busca en catálogo para tener nombre/variaciones/ingredientes completos
-    // Esto mejora "ver" y especialmente "editar"
     if (!items || items.length === 0) return [];
 
+    // OPTIMIZED: Build lookup Map once instead of using array.find() for each item
+    // This changes complexity from O(n*m) to O(n+m)
+    const productsMap = new Map();
+    products.forEach(product => {
+      productsMap.set(product.id, product);
+    });
+
     return items.map((item: any, index: number) => {
-      const productFromCatalog = products.find((p) => p.id === item.product_id);
+      const productFromCatalog = productsMap.get(item.product_id);
 
       const productName =
         item.product_name ||
@@ -435,7 +433,7 @@ export const OrdersManagement: React.FC = () => {
         productFromCatalog?.name ||
         'Producto';
 
-      const variationFromCatalog = productFromCatalog?.variations?.find((v) => v.id === item.variation_id);
+      const variationFromCatalog = productFromCatalog?.variations?.find((v: any) => v.id === item.variation_id);
 
       const variationName =
         item.variation_name ||
@@ -1140,7 +1138,7 @@ Tu pedido está en estado: *${order.status}*.`;
   // 9) Delete
   // =============================
   const handleDeleteOrder = async (orderId: string) => {
-    await ensureCatalogLoaded();
+    // OPTIMIZED: No need to load catalog just to show delete confirmation
     const full = await fetchOrderById(orderId);
     if (!full) return;
     setOrderToDelete(full);
@@ -1170,8 +1168,8 @@ Tu pedido está en estado: *${order.status}*.`;
     const afterPages = Math.max(1, Math.ceil(afterTotal / ITEMS_PER_PAGE));
     setCurrentPage((p) => Math.min(p, afterPages));
 
+    // OPTIMIZED: Only reload the orders list, not the stats
     await loadOrdersPage();
-    loadOrderStatsAccurate(); // fix #2
   };
 
   // =============================
@@ -1333,8 +1331,8 @@ Tu pedido está en estado: *${order.status}*.`;
     resetOrderForm();
     showToast('success', t('orderCreatedTitle'), t('orderCreateSuccess'), 4000);
 
+    // OPTIMIZED: Only reload the orders list, not the stats
     await loadOrdersPage();
-    loadOrderStatsAccurate(); // fix #2
   };
 
   const handleUpdateOrder = async () => {
@@ -1415,8 +1413,9 @@ Tu pedido está en estado: *${order.status}*.`;
 
     showToast('success', t('orderUpdatedTitle'), t('orderUpdateSuccess'), 4000);
 
+    // OPTIMIZED: Only reload the orders list, not the stats
+    // Stats will refresh automatically on next page load or status change
     await loadOrdersPage();
-    loadOrderStatsAccurate(); // fix #2
   };
 
   // =============================
