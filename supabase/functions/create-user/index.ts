@@ -8,7 +8,6 @@ const corsHeaders = {
 
 interface CreateUserRequest {
   email: string;
-  password: string;
   role: string;
   restaurant_id?: string | null;
 }
@@ -74,11 +73,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const body: CreateUserRequest = await req.json();
-    const { email, password, role, restaurant_id } = body;
+    const { email, role, restaurant_id } = body;
 
-    if (!email || !password || !role) {
+    if (!email || !role) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: email, password, role' }),
+        JSON.stringify({ error: 'Missing required fields: email, role' }),
         {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -86,11 +85,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: authData, error: authError } = await supabaseClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
+    const { data: authData, error: authError } = await supabaseClient.auth.admin.inviteUserByEmail(email, {
+      data: {
         full_name: email.split('@')[0],
       },
     });
@@ -120,8 +116,7 @@ Deno.serve(async (req: Request) => {
       .update({
         role,
         restaurant_id: role === 'superadmin' ? null : (restaurant_id || null),
-        email_verified: true,
-        require_password_change: true,
+        email_verified: false,
         updated_at: new Date().toISOString(),
       })
       .eq('id', authData.user.id);

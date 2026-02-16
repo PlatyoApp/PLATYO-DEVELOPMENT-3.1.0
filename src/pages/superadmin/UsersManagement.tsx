@@ -9,8 +9,7 @@ import {
   Filter,
   Building,
   UserPlus,
-  Lock,
-  Copy,
+  Mail,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
@@ -42,7 +41,6 @@ export const UsersManagement: React.FC = () => {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [showCannotDeleteModal, setShowCannotDeleteModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
 
@@ -54,8 +52,6 @@ export const UsersManagement: React.FC = () => {
 
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
   const [assigningUser, setAssigningUser] = useState<UserType | null>(null);
-  const [userForPasswordReset, setUserForPasswordReset] = useState<UserType | null>(null);
-  const [provisionalPassword, setProvisionalPassword] = useState('');
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
 
   // Filters
@@ -73,7 +69,6 @@ export const UsersManagement: React.FC = () => {
 
   const [newUserForm, setNewUserForm] = useState({
     email: '',
-    password: '',
     role: 'restaurant_owner' as UserType['role'],
     restaurant_id: '',
   });
@@ -462,8 +457,8 @@ export const UsersManagement: React.FC = () => {
   };
 
   const handleCreateUser = async () => {
-    if (!newUserForm.email || !newUserForm.password) {
-      showToast('error', 'Campos requeridos', 'Por favor completa todos los campos requeridos');
+    if (!newUserForm.email) {
+      showToast('error', 'Campo requerido', 'Por favor ingresa un email');
       return;
     }
 
@@ -472,8 +467,6 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
-    // OJO: ya no tenemos todos los usuarios en memoria para validar duplicados.
-    // Se valida realmente en backend/edge function. Aquí hacemos una validación ligera solo.
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -485,7 +478,6 @@ export const UsersManagement: React.FC = () => {
 
       const body = {
         email: newUserForm.email,
-        password: newUserForm.password,
         role: newUserForm.role,
         restaurant_id: newUserForm.role === 'superadmin'
           ? null
@@ -508,18 +500,13 @@ export const UsersManagement: React.FC = () => {
           showToast('error', 'Email duplicado', 'Este email ya está registrado');
           return;
         }
-        if (result.error?.includes('weak') || result.error?.includes('easy to guess')) {
-          showToast('error', 'Contraseña débil', 'La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común.');
-          return;
-        }
         throw new Error(result.error || 'Error al crear usuario');
       }
 
-      showToast('success', 'Éxito', 'Usuario creado exitosamente');
+      showToast('success', 'Invitación enviada', 'Se ha enviado un correo de invitación al usuario para que establezca su contraseña');
 
       setNewUserForm({
         email: '',
-        password: '',
         role: 'restaurant_owner',
         restaurant_id: '',
       });
@@ -565,54 +552,27 @@ export const UsersManagement: React.FC = () => {
     }
   };
 
-  const generateProvisionalPassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    let password = '';
-    for (let i = 0; i < 8; i++) password += chars.charAt(Math.floor(Math.random() * chars.length));
-    return password;
-  };
-
-  const handleResetPassword = (user: UserType) => {
-    const newPassword = generateProvisionalPassword();
-    setUserForPasswordReset(user);
-    setProvisionalPassword(newPassword);
-    setShowResetPasswordModal(true);
-  };
-
-  const confirmResetPassword = async () => {
-    if (!userForPasswordReset || !provisionalPassword) return;
+  const handleResendInvitation = async (user: UserType) => {
+    if (!confirm(`¿Deseas reenviar el correo de invitación a ${user.email}?`)) return;
 
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({
-          require_password_change: true,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userForPasswordReset.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        showToast('error', 'Error', 'No hay sesión activa');
+        return;
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
 
       if (error) throw error;
 
-      // OJO: esto requiere service role / admin en backend normalmente.
-      // Mantengo tu llamada tal cual si en tu proyecto funciona.
-      const { error: authError } = await supabase.auth.admin.updateUserById(
-        userForPasswordReset.id,
-        { password: provisionalPassword }
-      );
-      if (authError) throw authError;
-
-      showToast('success', 'Éxito', 'Contraseña restablecida exitosamente');
-      await loadUsersPage();
+      showToast('success', 'Invitación enviada', `Se ha reenviado el correo de invitación a ${user.email}`);
     } catch (error) {
-      console.error('Error resetting password:', error);
-      showToast('error', 'Error', 'No se pudo restablecer la contraseña');
+      console.error('Error resending invitation:', error);
+      showToast('error', 'Error', 'No se pudo reenviar la invitación');
     }
-  };
-
-  const closeResetPasswordModal = () => {
-    setShowResetPasswordModal(false);
-    setUserForPasswordReset(null);
-    setProvisionalPassword('');
   };
 
   // ==================== UI ====================
@@ -924,7 +884,6 @@ export const UsersManagement: React.FC = () => {
           setShowCreateUserModal(false);
           setNewUserForm({
             email: '',
-            password: '',
             role: 'restaurant_owner',
             restaurant_id: '',
           });
@@ -933,20 +892,24 @@ export const UsersManagement: React.FC = () => {
         size="md"
       >
         <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <Mail className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-blue-900">Invitación por correo</p>
+                <p className="text-xs text-blue-700 mt-1">
+                  Se enviará un correo de invitación al usuario para que establezca su contraseña
+                </p>
+              </div>
+            </div>
+          </div>
+
           <Input
             label="Email*"
             type="email"
             value={newUserForm.email}
             onChange={(e) => setNewUserForm(prev => ({ ...prev, email: e.target.value }))}
             placeholder="usuario@ejemplo.com"
-          />
-
-          <Input
-            label="Contraseña*"
-            type="password"
-            value={newUserForm.password}
-            onChange={(e) => setNewUserForm(prev => ({ ...prev, password: e.target.value }))}
-            placeholder="Mínimo 8 caracteres"
           />
 
           <div>
@@ -993,7 +956,6 @@ export const UsersManagement: React.FC = () => {
                 setShowCreateUserModal(false);
                 setNewUserForm({
                   email: '',
-                  password: '',
                   role: 'restaurant_owner',
                   restaurant_id: '',
                 });
@@ -1005,12 +967,11 @@ export const UsersManagement: React.FC = () => {
               onClick={handleCreateUser}
               disabled={
                 !newUserForm.email ||
-                !newUserForm.password ||
                 (newUserForm.role === 'restaurant_owner' && !newUserForm.restaurant_id)
               }
-              icon={UserPlus}
+              icon={Mail}
             >
-              Crear Usuario
+              Enviar Invitación
             </Button>
           </div>
         </div>
@@ -1052,14 +1013,14 @@ export const UsersManagement: React.FC = () => {
 
             <div className="border-t border-gray-200 pt-4">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-amber-800 mb-2">Restablecer Contraseña</p>
+                <p className="text-sm font-medium text-amber-800 mb-2">Reenviar Invitación</p>
                 <Button
                   variant="secondary"
                   size="sm"
-                  icon={Lock}
-                  onClick={() => handleResetPassword(editingUser)}
+                  icon={Mail}
+                  onClick={() => handleResendInvitation(editingUser)}
                 >
-                  Generar Contraseña Provisional
+                  Enviar Correo de Invitación
                 </Button>
               </div>
             </div>
@@ -1070,56 +1031,6 @@ export const UsersManagement: React.FC = () => {
               </Button>
               <Button variant="primary" onClick={saveUserEdit} icon={Edit}>
                 Guardar Cambios
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={showResetPasswordModal}
-        onClose={closeResetPasswordModal}
-        title="Contraseña Provisional Generada"
-        size="md"
-      >
-        {userForPasswordReset && (
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
-                <strong>Usuario:</strong> {userForPasswordReset.email}
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña Provisional</label>
-              <div className="flex gap-2">
-                <Input value={provisionalPassword} readOnly className="font-mono text-lg" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={Copy}
-                  onClick={() => {
-                    navigator.clipboard.writeText(provisionalPassword);
-                    showToast('success', 'Copiado', 'Contraseña copiada al portapapeles');
-                  }}
-                  title="Copiar contraseña"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-              <Button variant="ghost" onClick={closeResetPasswordModal}>
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  await confirmResetPassword();
-                  closeResetPasswordModal();
-                }}
-                icon={Lock}
-              >
-                Confirmar y Aplicar
               </Button>
             </div>
           </div>
