@@ -8,6 +8,7 @@ const corsHeaders = {
 
 interface DeleteUserRequest {
   userId: string;
+  forceDelete?: boolean;
 }
 
 Deno.serve(async (req: Request) => {
@@ -71,7 +72,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const body: DeleteUserRequest = await req.json();
-    const { userId } = body;
+    const { userId, forceDelete = false } = body;
 
     if (!userId) {
       return new Response(
@@ -100,26 +101,47 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (restaurants && restaurants.length > 0) {
-      console.log('Cannot delete: User is owner of restaurants:', restaurants);
+    if (restaurants && restaurants.length > 0 && !forceDelete) {
+      console.log('Warning: User is owner of restaurants, need confirmation:', restaurants);
 
       return new Response(
         JSON.stringify({
-          error: `No se puede eliminar este usuario porque es propietario de ${restaurants.length} restaurante(s). Primero debes transferir la propiedad a otro usuario.`,
-          cannotDelete: true,
+          requiresConfirmation: true,
           reason: 'owner',
           ownedRestaurants: restaurants.map(r => ({
             id: r.id,
             name: r.name,
             domain: r.domain || r.slug
           })),
-          message: `Este usuario es propietario de ${restaurants.length} restaurante(s). Debes transferir la propiedad antes de eliminarlo.`
+          message: `Este usuario es propietario de ${restaurants.length} restaurante(s). Al eliminarlo, se removerá la propiedad de estos restaurantes.`
         }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
+    }
+
+    if (restaurants && restaurants.length > 0 && forceDelete) {
+      console.log('Force deleting user who owns restaurants, removing ownership:', restaurants);
+
+      const { error: updateError } = await supabaseClient
+        .from('restaurants')
+        .update({ owner_id: null })
+        .eq('owner_id', userId);
+
+      if (updateError) {
+        console.error('Error removing restaurant ownership:', updateError);
+        return new Response(
+          JSON.stringify({ error: 'Error al remover la propiedad de restaurantes' }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      console.log('Successfully removed ownership from restaurants');
     }
 
     console.log('Step 10: Deleting support tickets for user (assigned or created)');

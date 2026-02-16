@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
       throw new Error('Only superadmins can delete restaurants');
     }
 
-    const { restaurantId } = await req.json();
+    const { restaurantId, forceDelete = false } = await req.json();
 
     if (!restaurantId) {
       throw new Error('Restaurant ID is required');
@@ -49,7 +49,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: restaurant, error: restaurantError } = await supabase
       .from('restaurants')
-      .select('name, owner_id')
+      .select('name, owner_id, owner_name')
       .eq('id', restaurantId)
       .single();
 
@@ -57,8 +57,37 @@ Deno.serve(async (req: Request) => {
       throw new Error('Restaurant not found');
     }
 
-    if (restaurant.owner_id) {
-      throw new Error('Cannot delete restaurant with an owner. Please transfer ownership first.');
+    if (restaurant.owner_id && !forceDelete) {
+      return new Response(
+        JSON.stringify({
+          requiresConfirmation: true,
+          reason: 'has_owner',
+          owner: {
+            id: restaurant.owner_id,
+            name: restaurant.owner_name
+          },
+          message: `Este restaurante tiene un propietario (${restaurant.owner_name || 'sin nombre'}). Al eliminarlo, se removerá la asignación del propietario pero el usuario no será eliminado.`
+        }),
+        {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+
+    if (restaurant.owner_id && forceDelete) {
+      const { error: updateOwnerError } = await supabase
+        .from('users')
+        .update({ restaurant_id: null })
+        .eq('id', restaurant.owner_id)
+        .eq('restaurant_id', restaurantId);
+
+      if (updateOwnerError) {
+        console.error('Error removing restaurant from owner:', updateOwnerError);
+      }
     }
 
     const { data: orders } = await supabase

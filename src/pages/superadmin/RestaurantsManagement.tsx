@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, Trash2, Filter, ExternalLink, Settings, UserCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, Trash2, Filter, ExternalLink, Settings, UserCheck, ChevronLeft, ChevronRight, AlertCircle, User } from 'lucide-react';
 import { Restaurant, Subscription, SubscriptionPlan } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
@@ -28,8 +28,10 @@ export const RestaurantsManagement: React.FC = () => {
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showForceDeleteModal, setShowForceDeleteModal] = useState(false);
 
   const [restaurantToDelete, setRestaurantToDelete] = useState<Restaurant | null>(null);
+  const [restaurantToForceDelete, setRestaurantToForceDelete] = useState<any>(null);
   const [restaurantToTransfer, setRestaurantToTransfer] = useState<Restaurant | null>(null);
   const [editingRestaurant, setEditingRestaurant] = useState<Restaurant | null>(null);
 
@@ -258,7 +260,7 @@ export const RestaurantsManagement: React.FC = () => {
     setShowDeleteModal(true);
   };
 
-  const confirmDeleteRestaurant = async () => {
+  const confirmDeleteRestaurant = async (forceDelete = false) => {
     if (!restaurantToDelete) return;
 
     try {
@@ -276,11 +278,24 @@ export const RestaurantsManagement: React.FC = () => {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ restaurantId: restaurantToDelete.id }),
+        body: JSON.stringify({ restaurantId: restaurantToDelete.id, forceDelete }),
       });
 
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Error al eliminar el restaurante');
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Error al eliminar el restaurante');
+      }
+
+      if (result.requiresConfirmation && !forceDelete) {
+        setRestaurantToForceDelete({
+          restaurant: restaurantToDelete,
+          ...result
+        });
+        setShowDeleteModal(false);
+        setShowForceDeleteModal(true);
+        return;
+      }
 
       toast.showToast('success', 'Eliminado', `Restaurante "${restaurantToDelete.name}" eliminado exitosamente`);
       await loadData();
@@ -290,6 +305,15 @@ export const RestaurantsManagement: React.FC = () => {
       console.error('Error deleting restaurant:', error);
       toast.showToast('error', 'Error', error.message || 'Error al eliminar el restaurante');
     }
+  };
+
+  const confirmForceDeleteRestaurant = async () => {
+    if (!restaurantToForceDelete) return;
+
+    setShowForceDeleteModal(false);
+    setRestaurantToDelete(restaurantToForceDelete.restaurant);
+    await confirmDeleteRestaurant(true);
+    setRestaurantToForceDelete(null);
   };
 
   const handleTransferOwnership = async (restaurant: Restaurant) => {
@@ -898,6 +922,86 @@ export const RestaurantsManagement: React.FC = () => {
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 {transferLoading ? 'Transfiriendo...' : 'Transferir Propiedad'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showForceDeleteModal}
+        onClose={() => {
+          setShowForceDeleteModal(false);
+          setRestaurantToForceDelete(null);
+        }}
+        title="Advertencia: Eliminar Restaurante con Propietario"
+        size="md"
+      >
+        {restaurantToForceDelete && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-orange-600" />
+              </div>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-orange-900 mb-2">
+                    {restaurantToForceDelete.message}
+                  </p>
+                  <p className="text-sm text-orange-800">
+                    Restaurante: <strong>{restaurantToForceDelete.restaurant.name}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {restaurantToForceDelete.owner && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">Propietario actual:</h4>
+                <div className="flex items-center gap-3">
+                  <User className="w-5 h-5 text-gray-500" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {restaurantToForceDelete.owner.name || 'Sin nombre'}
+                    </p>
+                    <p className="text-xs text-gray-500">ID: {restaurantToForceDelete.owner.id}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-800">
+                <strong>Consecuencias de esta acción:</strong>
+              </p>
+              <ul className="list-disc list-inside text-sm text-red-700 mt-2 space-y-1">
+                <li>El restaurante será eliminado permanentemente</li>
+                <li>Se eliminarán todos sus productos, categorías, pedidos y clientes</li>
+                <li>El usuario propietario perderá la asignación pero NO será eliminado</li>
+                <li>Esta acción NO se puede deshacer</li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowForceDeleteModal(false);
+                  setRestaurantToForceDelete(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                onClick={confirmForceDeleteRestaurant}
+                icon={Trash2}
+              >
+                Sí, eliminar restaurante
               </Button>
             </div>
           </div>

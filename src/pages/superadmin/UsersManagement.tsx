@@ -43,8 +43,10 @@ export const UsersManagement: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCannotDeleteModal, setShowCannotDeleteModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showForceDeleteModal, setShowForceDeleteModal] = useState(false);
 
   const [deleteBlockedDetails, setDeleteBlockedDetails] = useState<any>(null);
+  const [userToForceDelete, setUserToForceDelete] = useState<any>(null);
   const [restaurantToTransfer, setRestaurantToTransfer] = useState<any>(null);
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [selectedNewOwner, setSelectedNewOwner] = useState<string>('');
@@ -282,37 +284,11 @@ export const UsersManagement: React.FC = () => {
     }
   };
 
-  const deleteUser = async (userId: string) => {
+  const deleteUser = async (userId: string, forceDelete = false) => {
     const userToDelete = users.find(u => u.id === userId);
     if (!userToDelete) return;
 
-    // 1. VERIFICAR SI ES PROPIETARIO DE ALGÚN RESTAURANTE
-    const { data: ownedRestaurants, error: ownershipError } = await supabase
-      .from('restaurants')
-      .select('id, name, domain, slug')
-      .eq('owner_id', userId);
-
-    if (ownershipError) {
-      console.error('Error checking restaurant ownership:', ownershipError);
-      showToast('error', 'Error', 'No se pudo verificar la propiedad de restaurantes');
-      return;
-    }
-
-    // 2. SI ES PROPIETARIO, BLOQUEAR ELIMINACIÓN Y SOLICITAR TRANSFERENCIA
-    if (ownedRestaurants && ownedRestaurants.length > 0) {
-      setDeleteBlockedDetails({
-        user: userToDelete,
-        cannotDelete: true,
-        reason: 'owner',
-        message: `No se puede eliminar este usuario porque es propietario de ${ownedRestaurants.length} restaurante(s). Primero debes transferir la propiedad a otro usuario.`,
-        ownedRestaurants: ownedRestaurants
-      });
-      setShowCannotDeleteModal(true);
-      return;
-    }
-
-    // 3. SI NO ES PROPIETARIO, PROCEDER CON CONFIRMACIÓN NORMAL
-    if (!confirm(`¿Estás seguro de que quieres eliminar el usuario ${userToDelete.email}? Esta acción no se puede deshacer.`)) {
+    if (!forceDelete && !confirm(`¿Estás seguro de que quieres eliminar el usuario ${userToDelete.email}? Esta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -331,18 +307,22 @@ export const UsersManagement: React.FC = () => {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, forceDelete }),
       });
 
       const result = await response.json();
 
       if (!response.ok) {
-        if (result.cannotDelete) {
-          setDeleteBlockedDetails({ user: userToDelete, ...result });
-          setShowCannotDeleteModal(true);
-          return;
-        }
         throw new Error(result.error || 'Error al eliminar usuario');
+      }
+
+      if (result.requiresConfirmation && !forceDelete) {
+        setUserToForceDelete({
+          user: userToDelete,
+          ...result
+        });
+        setShowForceDeleteModal(true);
+        return;
       }
 
       showToast('success', 'Éxito', 'Usuario eliminado exitosamente');
@@ -351,6 +331,14 @@ export const UsersManagement: React.FC = () => {
       console.error('Error deleting user:', error);
       showToast('error', 'Error', error?.message || 'No se pudo eliminar el usuario');
     }
+  };
+
+  const confirmForceDeleteUser = async () => {
+    if (!userToForceDelete) return;
+
+    setShowForceDeleteModal(false);
+    await deleteUser(userToForceDelete.user.id, true);
+    setUserToForceDelete(null);
   };
 
   const handleTransferOwnership = async (restaurant: any) => {
@@ -1199,6 +1187,94 @@ export const UsersManagement: React.FC = () => {
                 disabled={!selectedNewOwner || transferLoading || availableUsers.length === 0}
               >
                 {transferLoading ? 'Transfiriendo...' : 'Confirmar Transferencia'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Force Delete User Modal */}
+      <Modal
+        isOpen={showForceDeleteModal}
+        onClose={() => {
+          setShowForceDeleteModal(false);
+          setUserToForceDelete(null);
+        }}
+        title="Advertencia: Eliminar Usuario Propietario"
+        size="md"
+      >
+        {userToForceDelete && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-8 h-8 text-orange-600" />
+              </div>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-6 h-6 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-orange-900 mb-2">
+                    {userToForceDelete.message}
+                  </p>
+                  <p className="text-sm text-orange-800">
+                    Usuario: <strong>{userToForceDelete.user.email}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {userToForceDelete.ownedRestaurants && userToForceDelete.ownedRestaurants.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">
+                  Restaurantes afectados ({userToForceDelete.ownedRestaurants.length}):
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {userToForceDelete.ownedRestaurants.map((restaurant: any) => (
+                    <div
+                      key={restaurant.id}
+                      className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg"
+                    >
+                      <Building className="w-5 h-5 text-gray-500" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{restaurant.name}</p>
+                        <p className="text-xs text-gray-500">{restaurant.domain}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-800">
+                <strong>Consecuencias de esta acción:</strong>
+              </p>
+              <ul className="list-disc list-inside text-sm text-red-700 mt-2 space-y-1">
+                <li>El usuario será eliminado permanentemente</li>
+                <li>Los restaurantes perderán su propietario (owner_id = null)</li>
+                <li>Los restaurantes NO serán eliminados</li>
+                <li>Esta acción NO se puede deshacer</li>
+              </ul>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowForceDeleteModal(false);
+                  setUserToForceDelete(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                onClick={confirmForceDeleteUser}
+                icon={Trash2}
+              >
+                Sí, eliminar de todas formas
               </Button>
             </div>
           </div>
