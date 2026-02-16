@@ -18,30 +18,48 @@ export const ResetPasswordPage: React.FC = () => {
 
   useEffect(() => {
     const handleRecovery = async () => {
+      console.log('Current URL:', window.location.href);
+      console.log('Hash:', window.location.hash);
+
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session) {
+        console.log('Session already exists:', session);
         setIsValidRecovery(true);
         return;
       }
 
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
       const type = hashParams.get('type');
 
+      console.log('URL params:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        type
+      });
+
       if (!accessToken || (type !== 'recovery' && type !== 'invite')) {
+        console.error('Invalid recovery link - missing token or wrong type');
         setError('El enlace ha expirado o es inválido. Por favor solicita uno nuevo.');
         return;
       }
 
+      console.log('Setting session with tokens...');
       const { data, error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
-        refresh_token: hashParams.get('refresh_token') || '',
+        refresh_token: refreshToken || '',
       });
 
-      if (sessionError || !data.session) {
+      if (sessionError) {
+        console.error('Error setting session:', sessionError);
+        setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
+      } else if (!data.session) {
+        console.error('No session returned after setSession');
         setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
       } else {
+        console.log('Session set successfully:', data.session);
         setIsValidRecovery(true);
       }
     };

@@ -366,19 +366,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const requestPasswordReset = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      const redirectUrl = `${window.location.origin}/reset-password`;
+      console.log('Requesting password reset for:', email);
+      console.log('Redirect URL:', redirectUrl);
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: redirectUrl,
       });
 
       if (error) {
+        console.error('Password reset error:', error);
         if (error.message.includes('User not found')) {
           return { success: false, error: 'No se encontró una cuenta con ese email' };
         }
         throw error;
       }
 
+      console.log('Password reset email sent successfully');
       return { success: true };
     } catch (error: any) {
+      console.error('Password reset exception:', error);
       return { success: false, error: error?.message || 'Error al solicitar recuperación' };
     }
   };
