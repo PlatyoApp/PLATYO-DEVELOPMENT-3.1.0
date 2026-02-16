@@ -24,6 +24,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
   const { addItem } = useCart();
 
   const toggleIngredient = (ingredient: ProductIngredient) => {
+    if (!ingredient.optional) return;
+
     setSelectedIngredients(prev => {
       const isSelected = prev.some(ing => ing.id === ingredient.id);
       if (isSelected) {
@@ -193,8 +195,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
               </div>
             )}
 
-            {/* Ingredients - Only show optional ingredients */}
-            {product.ingredients && product.ingredients.filter(ing => ing.optional).length > 0 && (
+            {/* Ingredients - Show ALL ingredients */}
+            {product.ingredients && product.ingredients.length > 0 && (
               <div className="mb-6">
                 <h3
                   className="font-semibold mb-3"
@@ -204,10 +206,10 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                     fontFamily: theme.secondary_font || 'Poppins'
                   }}
                 >
-                  Ingredientes opcionales
+                  Ingredientes
                 </h3>
                 <div className="space-y-2">
-                  {product.ingredients.filter(ingredient => ingredient.optional).map(ingredient => (
+                  {product.ingredients.map(ingredient => (
                   <label
                     key={ingredient.id}
                     className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
@@ -215,26 +217,45 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                       borderColor: '#e5e7eb',
                       borderRadius: '8px',
                       transition: 'background-color 0.3s ease',
-                      fontFamily: theme.secondary_font || 'Poppins'
+                      fontFamily: theme.secondary_font || 'Poppins',
+                      opacity: ingredient.optional ? 1 : 0.7,
+                      cursor: ingredient.optional ? 'pointer' : 'default'
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = primaryColor)}
+                    onMouseEnter={(e) => {
+                      if (ingredient.optional) {
+                        e.currentTarget.style.backgroundColor = primaryColor;
+                      }
+                    }}
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                   >
                       <input
                         type="checkbox"
+                        disabled={!ingredient.optional}
                         checked={selectedIngredients.some(ing => ing.id === ingredient.id)}
                         onChange={() => toggleIngredient(ingredient)}
                         className="w-4 h-4 rounded"
                         style={{ accentColor: primaryColor, fontFamily: theme.secondary_font || 'Poppins' }}
                       />
                       <span
-                        className="flex-1"
+                        className="flex-1 flex items-center gap-2"
                         style={{
                           fontSize: '13px',
                           color: secondaryTextColor
                         }}
                       >
                         {ingredient.name}
+                        {!ingredient.optional && (
+                          <span
+                            className="text-xs px-2 py-0.5 rounded"
+                            style={{
+                              backgroundColor: primaryColor + '20',
+                              color: primaryColor,
+                              fontSize: '11px'
+                            }}
+                          >
+                            Incluido
+                          </span>
+                        )}
                       </span>
                       {ingredient.extra_cost && ingredient.extra_cost > 0 && (
                         <span
