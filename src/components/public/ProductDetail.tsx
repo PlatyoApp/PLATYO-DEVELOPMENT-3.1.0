@@ -244,18 +244,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({ product, restauran
                         }}
                       >
                         {ingredient.name}
-                        {!ingredient.optional && (
-                          <span
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{
-                              backgroundColor: primaryColor + '20',
-                              color: primaryColor,
-                              fontSize: '11px'
-                            }}
-                          >
-                            Incluido
-                          </span>
-                        )}
+
                       </span>
                       {ingredient.extra_cost && ingredient.extra_cost > 0 && (
                         <span
