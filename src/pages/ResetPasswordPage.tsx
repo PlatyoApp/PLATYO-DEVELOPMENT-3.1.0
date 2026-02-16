@@ -29,8 +29,8 @@ export const ResetPasswordPage: React.FC = () => {
       const accessToken = hashParams.get('access_token');
       const type = hashParams.get('type');
 
-      if (!accessToken || type !== 'recovery') {
-        setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
+      if (!accessToken || (type !== 'recovery' && type !== 'invite')) {
+        setError('El enlace ha expirado o es inválido. Por favor solicita uno nuevo.');
         return;
       }
 
