@@ -411,16 +411,27 @@ export const PublicMenu: React.FC = () => {
   }, [featuredProducts.length]);
 
   useEffect(() => {
-    if (!hasMoreProducts || loadingMoreProducts || !restaurant) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && hasMoreProducts && !loadingMoreProducts) {
+          loadMoreProducts();
+        }
+      },
+      { threshold: 0.1 }
+    );
 
-    const timer = setTimeout(() => {
-      loadMoreProducts();
-    }, 800);
+    const sentinel = document.getElementById('load-more-sentinel');
+    if (sentinel) {
+      observer.observe(sentinel);
+    }
 
     return () => {
-      clearTimeout(timer);
+      if (sentinel) {
+        observer.unobserve(sentinel);
+      }
     };
-  }, [hasMoreProducts, loadingMoreProducts, productOffset, restaurant]);
+  }, [hasMoreProducts, loadingMoreProducts, productOffset]);
   
 
   if (loading && !restaurant) {
@@ -1083,8 +1094,8 @@ export const PublicMenu: React.FC = () => {
             )}
           </div>
         )}
-        {hasMoreProducts && (
-          <div className="h-20 flex items-center justify-center">
+        {hasMoreProducts && !loadingMoreProducts && (
+          <div id="load-more-sentinel" className="h-20 flex items-center justify-center">
             <div className="text-gray-400 text-sm">Cargando más productos...</div>
           </div>
         )}
