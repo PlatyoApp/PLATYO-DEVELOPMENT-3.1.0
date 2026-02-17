@@ -751,6 +751,19 @@ interface Translations {
   addMoreProducts: string;
   addMoreCategories: string;
 
+  // Plan Change & Downgrade
+  planChangeDetected: string;
+  planChangedFrom: string;
+  productsArchived: string;
+  categoriesDeactivated: string;
+  hideDetails: string;
+  viewDetails: string;
+  manageArchivedItems: string;
+  archivedProducts: string;
+  deactivatedCategories: string;
+  note: string;
+  downgradeSummaryNote: string;
+
   // Super Admin
   superAdminPanel: string;
   superAdminDashboard: string;
@@ -2429,7 +2442,20 @@ const translations: Record<Language, Translations> = {
     upgradeSubscription: 'Actualiza tu suscripción',
     addMoreProducts: 'para agregar más productos.',
     addMoreCategories: 'para agregar más categorías.',
-    
+
+    // Plan Change & Downgrade
+    planChangeDetected: 'Cambio de Plan Detectado',
+    planChangedFrom: 'Tu plan cambió de',
+    productsArchived: 'Productos Archivados',
+    categoriesDeactivated: 'Categorías Desactivadas',
+    hideDetails: 'Ocultar detalles',
+    viewDetails: 'Ver detalles',
+    manageArchivedItems: 'Gestionar elementos archivados',
+    archivedProducts: 'Productos archivados',
+    deactivatedCategories: 'Categorías desactivadas',
+    note: 'Nota',
+    downgradeSummaryNote: 'Los productos archivados y categorías desactivadas pueden ser reactivados en cualquier momento si tienes espacio disponible en tu plan actual.',
+
     // Super Admin
     superAdminPanel: 'Panel de Superadministrador',
     superAdminDashboard: 'Dashboard Principal',
@@ -4108,7 +4134,20 @@ const translations: Record<Language, Translations> = {
     upgradeSubscription: 'Upgrade your subscription',
     addMoreProducts: 'to add more products.',
     addMoreCategories: 'to add more categories.',
-    
+
+    // Plan Change & Downgrade
+    planChangeDetected: 'Plan Change Detected',
+    planChangedFrom: 'Your plan changed from',
+    productsArchived: 'Products Archived',
+    categoriesDeactivated: 'Categories Deactivated',
+    hideDetails: 'Hide details',
+    viewDetails: 'View details',
+    manageArchivedItems: 'Manage archived items',
+    archivedProducts: 'Archived products',
+    deactivatedCategories: 'Deactivated categories',
+    note: 'Note',
+    downgradeSummaryNote: 'Archived products and deactivated categories can be reactivated at any time if you have available space in your current plan.',
+
     // Super Admin
     superAdminPanel: 'Super Admin Panel',
     superAdminDashboard: 'Main Dashboard',

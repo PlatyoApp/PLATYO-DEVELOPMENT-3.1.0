@@ -11,7 +11,8 @@ import {
   FolderOpen,
   Crown,
   HelpCircle,
-  Lock
+  Lock,
+  Archive
 } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
@@ -181,6 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'orders', name: t('orders'), icon: ShoppingBag },
       { id: 'customers', name: t('customers'), icon: Users },
       { id: 'subscription', name: t('subscription'), icon: Crown },
+      { id: 'archived', name: t('manageArchivedItems'), icon: Archive },
       { id: 'settings', name: t('settings'), icon: Settings }
     ];
 

@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/Badge';
 import { formatCurrency } from '../../utils/currencyUtils';
 import { TutorialModal } from '../../components/restaurant/TutorialModal';
 import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
+import { DowngradeSummaryBanner } from '../../components/subscription/DowngradeSummaryBanner';
 import { subscriptionService } from '../../services/subscriptionService';
 
 export const RestaurantDashboard: React.FC = () => {
@@ -225,6 +226,16 @@ export const RestaurantDashboard: React.FC = () => {
           archivedCount={archivedCount}
           onViewArchived={() => window.location.href = '/dashboard/menu'}
           dismissible
+        />
+      )}
+
+      {restaurant?.id && (
+        <DowngradeSummaryBanner
+          restaurantId={restaurant.id}
+          onViewArchived={() => {
+            sessionStorage.setItem('activeTab', 'archived');
+            window.location.reload();
+          }}
         />
       )}
 

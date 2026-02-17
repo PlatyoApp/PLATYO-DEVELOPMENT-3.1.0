@@ -44,6 +44,7 @@ export const CategoriesManagement: React.FC = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const [loading, setLoading] = useState(false);
 
@@ -171,14 +172,25 @@ export const CategoriesManagement: React.FC = () => {
 
   // ===== Derived =====
   const filteredCategories = useMemo(() => {
-    if (!debouncedSearchTerm) return categories;
-    const q = debouncedSearchTerm.toLowerCase();
-    return categories.filter((c) => {
-      const n = c.name?.toLowerCase() || '';
-      const d = (c.description || '').toLowerCase();
-      return n.includes(q) || d.includes(q);
-    });
-  }, [categories, debouncedSearchTerm]);
+    let filtered = categories;
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((c) =>
+        statusFilter === 'active' ? c.is_active : !c.is_active
+      );
+    }
+
+    if (debouncedSearchTerm) {
+      const q = debouncedSearchTerm.toLowerCase();
+      filtered = filtered.filter((c) => {
+        const n = c.name?.toLowerCase() || '';
+        const d = (c.description || '').toLowerCase();
+        return n.includes(q) || d.includes(q);
+      });
+    }
+
+    return filtered;
+  }, [categories, debouncedSearchTerm, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCategories.length / PAGE_SIZE));
 
@@ -569,7 +581,7 @@ export const CategoriesManagement: React.FC = () => {
 
       {/* Search */}
       <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="relative">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
@@ -578,6 +590,41 @@ export const CategoriesManagement: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              statusFilter === 'all'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {t('all')} ({categories.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('active')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              statusFilter === 'active'
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <Eye className="w-4 h-4 inline mr-1" />
+            {t('active')} ({categories.filter(c => c.is_active).length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('inactive')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              statusFilter === 'inactive'
+                ? 'bg-gray-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <EyeOff className="w-4 h-4 inline mr-1" />
+            {t('inactive')} ({categories.filter(c => !c.is_active).length})
+          </button>
         </div>
 
         {!debouncedSearchTerm && categories.length > 1 && (

@@ -15,6 +15,7 @@ import { RestaurantAnalytics } from './restaurant/RestaurantAnalytics';
 import { CategoriesManagement } from './restaurant/CategoriesManagement';
 import { SubscriptionPlans } from './restaurant/SubscriptionPlans';
 import { CustomersManagement } from './restaurant/CustomersManagement';
+import { ArchivedItemsManagement } from './restaurant/ArchivedItemsManagement';
 import { SupportTicketsManagement } from './superadmin/SupportTicketsManagement';
 
 export const DashboardPage: React.FC = () => {
@@ -60,6 +61,8 @@ export const DashboardPage: React.FC = () => {
           return <CustomersManagement />;
         case 'subscription':
           return <SubscriptionPlans />;
+        case 'archived':
+          return <ArchivedItemsManagement />;
         case 'settings':
           return <RestaurantSettings />;
         case 'analytics':
