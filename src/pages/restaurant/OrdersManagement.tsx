@@ -27,6 +27,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { OrderProductSelector } from '../../components/restaurant/OrderProductSelector';
 import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
+import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { formatCurrency } from '../../utils/currencyUtils';
 
 /**
@@ -1428,6 +1429,17 @@ Tu pedido está en estado: *${order.status}*.`;
   // =============================
   // UI
   // =============================
+  if (status?.isExpired || !status?.isActive) {
+    return (
+      <div className="p-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('orderManagement')}</h1>
+        </div>
+        <SubscriptionBlocker planName={status?.planName} />
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -1458,15 +1470,6 @@ Tu pedido está en estado: *${order.status}*.`;
           </Button>
         </div>
       </div>
-
-      {/* Subscription Expired Banner */}
-      {status?.isExpired && (
-        <SubscriptionExpiredBanner
-          type="expired"
-          planName={status.planName}
-          daysRemaining={status.daysRemaining}
-        />
-      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">

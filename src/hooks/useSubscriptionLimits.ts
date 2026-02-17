@@ -39,13 +39,29 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
           )
         `)
         .eq('restaurant_id', restaurantId)
-        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (subError) throw subError;
 
       if (!subscription) {
-        setError('No active subscription found');
+        setError('No subscription found');
+        setStatus({
+          isExpired: true,
+          isActive: false,
+          daysRemaining: 0,
+          planName: 'None',
+          endDate: new Date().toISOString(),
+        });
+        setLimits({
+          max_products: 0,
+          max_categories: 0,
+          current_products: 0,
+          current_categories: 0,
+          canCreateProduct: false,
+          canCreateCategory: false,
+        });
         setLoading(false);
         return;
       }
@@ -72,23 +88,26 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
       const currentProducts = productCount || 0;
       const currentCategories = categoryCount || 0;
 
+      const isSubscriptionActive = subscription.status === 'active' && endDate >= now;
+
       setLimits({
         max_products: maxProducts,
         max_categories: maxCategories,
         current_products: currentProducts,
         current_categories: currentCategories,
-        canCreateProduct: currentProducts < maxProducts,
-        canCreateCategory: currentCategories < maxCategories,
+        canCreateProduct: isSubscriptionActive && currentProducts < maxProducts,
+        canCreateCategory: isSubscriptionActive && currentCategories < maxCategories,
       });
 
       const endDate = new Date(subscription.end_date);
       const now = new Date();
       const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      const isExpired = endDate < now;
+      const isExpired = subscription.status !== 'active' || endDate < now;
+      const isActive = subscription.status === 'active' && endDate >= now;
 
       setStatus({
         isExpired,
-        isActive: subscription.status === 'active' && !isExpired,
+        isActive,
         daysRemaining: Math.max(0, daysRemaining),
         planName: subscription.plan_name,
         endDate: subscription.end_date,

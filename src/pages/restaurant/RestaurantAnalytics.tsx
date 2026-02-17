@@ -14,10 +14,12 @@ import { Product, Order, Category } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
+import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { formatCurrency } from '../../utils/currencyUtils';
 
 type OrderListLite = Pick<Order, 'id' | 'created_at' | 'status' | 'order_type' | 'total' | 'subtotal' | 'delivery_cost'> & {
@@ -31,6 +33,7 @@ export const RestaurantAnalytics: React.FC = () => {
   const { restaurant } = useAuth();
   const { showToast } = useToast();
   const { t } = useLanguage();
+  const { status } = useSubscriptionLimits(restaurant?.id);
 
   const currency = restaurant?.settings?.currency || 'USD';
 
@@ -348,6 +351,17 @@ useEffect(() => {
     generateFileName,
     showToast
   ]);
+
+  if (status?.isExpired || !status?.isActive) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('analyticsPageTitle')}</h1>
+        </div>
+        <SubscriptionBlocker planName={status?.planName} />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

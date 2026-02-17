@@ -470,15 +470,6 @@ export const RestaurantSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Subscription Expired Banner */}
-      {status?.isExpired && (
-        <SubscriptionExpiredBanner
-          type="expired"
-          planName={status.planName}
-          daysRemaining={status.daysRemaining}
-        />
-      )}
-
       <div className="bg-white rounded-lg shadow">
         {/* Tabs */}
         <div className="border-b border-gray-200">
