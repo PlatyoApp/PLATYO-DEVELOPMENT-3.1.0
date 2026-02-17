@@ -149,7 +149,7 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
   }, [fetchSubscriptionData]);
 
   const checkProductLimit = useCallback(async (): Promise<LimitCheckResult> => {
-    if (!limits) {
+    if (!restaurantId || !status) {
       return {
         canCreate: false,
         canActivate: false,
@@ -159,21 +159,57 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
       };
     }
 
-    const canCreate = limits.current_products < limits.max_products;
+    try {
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .eq('status', 'active')
+        .maybeSingle();
 
-    return {
-      canCreate,
-      canActivate: canCreate,
-      currentCount: limits.current_products,
-      maxCount: limits.max_products,
-      message: canCreate
-        ? `You can create ${limits.max_products - limits.current_products} more product(s)`
-        : `Product limit reached (${limits.current_products}/${limits.max_products}). Upgrade your plan to add more products.`,
-    };
-  }, [limits]);
+      if (!subscription) {
+        return {
+          canCreate: false,
+          canActivate: false,
+          currentCount: 0,
+          maxCount: 0,
+          message: 'No active subscription found',
+        };
+      }
+
+      const { count: currentCount } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('restaurant_id', restaurantId)
+        .eq('status', 'active');
+
+      const maxProducts = subscription.max_products || 0;
+      const currentProducts = currentCount || 0;
+      const canCreate = currentProducts < maxProducts;
+
+      return {
+        canCreate,
+        canActivate: canCreate,
+        currentCount: currentProducts,
+        maxCount: maxProducts,
+        message: canCreate
+          ? `You can create ${maxProducts - currentProducts} more product(s)`
+          : `Product limit reached (${currentProducts}/${maxProducts}). Upgrade your plan to add more products.`,
+      };
+    } catch (error) {
+      console.error('Error checking product limit:', error);
+      return {
+        canCreate: false,
+        canActivate: false,
+        currentCount: 0,
+        maxCount: 0,
+        message: 'Error checking product limit',
+      };
+    }
+  }, [restaurantId, status]);
 
   const checkCategoryLimit = useCallback(async (): Promise<LimitCheckResult> => {
-    if (!limits) {
+    if (!restaurantId || !status) {
       return {
         canCreate: false,
         canActivate: false,
@@ -183,18 +219,60 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
       };
     }
 
-    const canCreate = limits.current_categories < limits.max_categories;
+    try {
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .eq('status', 'active')
+        .maybeSingle();
 
-    return {
-      canCreate,
-      canActivate: canCreate,
-      currentCount: limits.current_categories,
-      maxCount: limits.max_categories,
-      message: canCreate
-        ? `You can create ${limits.max_categories - limits.current_categories} more category/categories`
-        : `Category limit reached (${limits.current_categories}/${limits.max_categories}). Upgrade your plan to add more categories.`,
-    };
-  }, [limits]);
+      if (!subscription) {
+        return {
+          canCreate: false,
+          canActivate: false,
+          currentCount: 0,
+          maxCount: 0,
+          message: 'No active subscription found',
+        };
+      }
+
+      const { count: currentCount } = await supabase
+        .from('categories')
+        .select('*', { count: 'exact', head: true })
+        .eq('restaurant_id', restaurantId)
+        .eq('is_active', true);
+
+      const planName = subscription.plan_name?.toLowerCase() || 'free';
+      let maxCategories = 10;
+      if (planName === 'free') maxCategories = 5;
+      else if (planName === 'basic') maxCategories = 15;
+      else if (planName === 'pro') maxCategories = 25;
+      else if (planName === 'business') maxCategories = 50;
+
+      const currentCategories = currentCount || 0;
+      const canCreate = currentCategories < maxCategories;
+
+      return {
+        canCreate,
+        canActivate: canCreate,
+        currentCount: currentCategories,
+        maxCount: maxCategories,
+        message: canCreate
+          ? `You can create ${maxCategories - currentCategories} more category/categories`
+          : `Category limit reached (${currentCategories}/${maxCategories}). Upgrade your plan to add more categories.`,
+      };
+    } catch (error) {
+      console.error('Error checking category limit:', error);
+      return {
+        canCreate: false,
+        canActivate: false,
+        currentCount: 0,
+        maxCount: 0,
+        message: 'Error checking category limit',
+      };
+    }
+  }, [restaurantId, status]);
 
   const canActivateProduct = useCallback(async (): Promise<boolean> => {
     if (!limits) return false;

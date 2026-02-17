@@ -29,12 +29,7 @@ export const subscriptionService = {
 
       const { data: subscription } = await supabase
         .from('subscriptions')
-        .select(`
-          *,
-          subscription_plans (
-            max_products
-          )
-        `)
+        .select('*')
         .eq('restaurant_id', restaurantId)
         .eq('status', 'active')
         .maybeSingle();
@@ -45,7 +40,7 @@ export const subscriptionService = {
         .eq('restaurant_id', restaurantId)
         .eq('status', 'active');
 
-      const maxProducts = subscription?.subscription_plans?.max_products || subscription?.max_products || 0;
+      const maxProducts = subscription?.max_products || 0;
       const currentActive = activeCount || 0;
       const availableSlots = Math.max(0, maxProducts - currentActive);
 
@@ -74,17 +69,12 @@ export const subscriptionService = {
 
       const { data: subscription } = await supabase
         .from('subscriptions')
-        .select(`
-          *,
-          subscription_plans (
-            max_products
-          )
-        `)
+        .select('*')
         .eq('restaurant_id', restaurantId)
         .eq('status', 'active')
         .maybeSingle();
 
-      const maxProducts = subscription?.subscription_plans?.max_products || subscription?.max_products || 0;
+      const maxProducts = subscription?.max_products || 0;
       const currentActive = activeCount || 0;
 
       if (currentActive >= maxProducts) {
@@ -171,19 +161,19 @@ export const subscriptionService = {
     try {
       const { data: subscription } = await supabase
         .from('subscriptions')
-        .select(`
-          *,
-          subscription_plans (
-            max_products,
-            max_categories
-          )
-        `)
+        .select('*')
         .eq('restaurant_id', restaurantId)
         .eq('status', 'active')
         .maybeSingle();
 
-      const maxProducts = subscription?.subscription_plans?.max_products || subscription?.max_products || 0;
-      const maxCategories = subscription?.subscription_plans?.max_categories || 10;
+      const maxProducts = subscription?.max_products || 0;
+
+      const planName = subscription?.plan_name?.toLowerCase() || 'free';
+      let maxCategories = 10;
+      if (planName === 'free') maxCategories = 5;
+      else if (planName === 'basic') maxCategories = 15;
+      else if (planName === 'pro') maxCategories = 25;
+      else if (planName === 'business') maxCategories = 50;
 
       const { count: productCount } = await supabase
         .from('products')
