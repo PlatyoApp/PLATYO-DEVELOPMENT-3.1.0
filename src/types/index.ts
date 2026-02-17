@@ -39,6 +39,7 @@ export interface Category {
   restaurant_id: string;
   display_order: number;
   is_active: boolean;
+  blocked_by_plan_limit?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -62,6 +63,7 @@ export interface Product {
   is_featured: boolean;
   display_order?: number;
   compare_at_price?: number;
+  blocked_by_plan_limit?: boolean;
   created_at: string;
   updated_at: string;
 }

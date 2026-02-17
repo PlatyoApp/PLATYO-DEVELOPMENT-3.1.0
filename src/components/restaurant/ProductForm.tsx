@@ -10,6 +10,7 @@ interface ProductFormProps {
   product?: Product | null;
   onSave: (productData: any) => void;
   onCancel: () => void;
+  currentPlanMaxProducts?: number;
 }
 
 interface ProductVariation {
@@ -30,9 +31,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   categories,
   product,
   onSave,
-  onCancel
+  onCancel,
+  currentPlanMaxProducts
 }) => {
   const { t } = useLanguage();
+  const isBlockedByPlanLimit = product?.blocked_by_plan_limit || false;
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -215,13 +218,27 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           </label>
           <select
             value={formData.status}
-            onChange={(e) => handleInputChange('status', e.target.value)}
+            onChange={(e) => {
+              const newStatus = e.target.value;
+              if (newStatus === 'active' && isBlockedByPlanLimit) {
+                alert(`Este producto está bloqueado porque excede el límite de ${currentPlanMaxProducts || 0} productos de tu plan actual. Para activarlo, elimina otros productos o actualiza tu plan.`);
+                return;
+              }
+              handleInputChange('status', newStatus);
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="active">{t('active')}</option>
+            <option value="active" disabled={isBlockedByPlanLimit}>
+              {t('active')} {isBlockedByPlanLimit ? '(Bloqueado por límite del plan)' : ''}
+            </option>
             <option value="out_of_stock">{t('outOfStock')}</option>
             <option value="archived">{t('archived')}</option>
           </select>
+          {isBlockedByPlanLimit && (
+            <p className="text-xs text-orange-600 mt-1 font-medium">
+              Este producto excede el límite de tu plan. No puede ser activado hasta que elimines otros productos o actualices tu plan.
+            </p>
+          )}
         </div>
       </div>
 

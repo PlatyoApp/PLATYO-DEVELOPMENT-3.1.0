@@ -45,6 +45,7 @@ type ProductListItem = Pick<
   | 'display_order'
   | 'price'
   | 'updated_at'
+  | 'blocked_by_plan_limit'
 > & {
   category_id: string;
 };
@@ -383,6 +384,7 @@ export const MenuManagement: React.FC = () => {
             display_order,
             price,
             updated_at,
+            blocked_by_plan_limit,
             product_categories ( category_id )
           `
           : `
@@ -397,6 +399,7 @@ export const MenuManagement: React.FC = () => {
             is_featured,
             display_order,
             price,
+            blocked_by_plan_limit,
             updated_at
           `,
         { count: 'exact' }
@@ -1258,7 +1261,12 @@ export const MenuManagement: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="absolute top-2 right-2">{getStatusBadge(product.status)}</div>
+                  <div className="absolute top-2 right-2 flex flex-col gap-1">
+                    {getStatusBadge(product.status)}
+                    {product.blocked_by_plan_limit && (
+                      <Badge variant="warning">Bloqueado</Badge>
+                    )}
+                  </div>
                 </div>
 
                 <div className="p-4">
@@ -1266,6 +1274,12 @@ export const MenuManagement: React.FC = () => {
                     <h3 className="text-lg font-semibold text-gray-900 truncate">{product.name}</h3>
                     <p className="text-sm text-gray-600">{getCategoryName(product.category_id)}</p>
                   </div>
+
+                  {product.blocked_by_plan_limit && (
+                    <p className="text-xs text-orange-600 mb-2 font-medium">
+                      Este producto excede el límite de tu plan. Elimínalo o actualiza tu plan.
+                    </p>
+                  )}
 
                   <p className="text-gray-700 text-sm mb-3 line-clamp-2">{product.description}</p>
 
@@ -1383,6 +1397,7 @@ export const MenuManagement: React.FC = () => {
               setEditingProductId(null);
               setEditingProduct(null);
             }}
+            currentPlanMaxProducts={limits?.max_products}
           />
         )}
       </Modal>

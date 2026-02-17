@@ -152,7 +152,7 @@ export const CategoriesManagement: React.FC = () => {
 
     const { data, error } = await supabase
       .from('categories')
-      .select('id, restaurant_id, name, description, icon, display_order, is_active, created_at, updated_at')
+      .select('id, restaurant_id, name, description, icon, display_order, is_active, created_at, updated_at, blocked_by_plan_limit')
       .eq('restaurant_id', restaurant.id)
       .order('display_order', { ascending: true });
 
@@ -310,9 +310,20 @@ export const CategoriesManagement: React.FC = () => {
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return;
 
-    try {
-      const nextActive = !category.is_active;
+    const nextActive = !category.is_active;
 
+    if (nextActive && category.blocked_by_plan_limit) {
+      showToast(
+        'warning',
+        'Categoría bloqueada por límite del plan',
+        `Esta categoría ha sido bloqueada porque excede el límite de ${limits?.max_categories || 0} categorías de tu plan actual. Para activarla, elimina otras categorías o actualiza tu plan.`,
+        7000
+      );
+      setShowUpgradeModal(true);
+      return;
+    }
+
+    try {
       const { error } = await supabase
         .from('categories')
         .update({ is_active: nextActive })
@@ -675,11 +686,23 @@ export const CategoriesManagement: React.FC = () => {
                       <Badge variant={category.is_active ? 'success' : 'gray'}>
                         {category.is_active ? t('active') : t('inactive')}
                       </Badge>
+                      {category.blocked_by_plan_limit && (
+                        <Badge variant="warning">
+                          Bloqueada por límite
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600 line-clamp-1">{category.description || 'Sin descripción'}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {t('categoriesCreated')}: {new Date(category.created_at).toLocaleDateString()}
-                    </p>
+                    {category.blocked_by_plan_limit && (
+                      <p className="text-xs text-orange-600 mt-1 font-medium">
+                        Esta categoría excede el límite de tu plan. Elimínala o actualiza tu plan para activarla.
+                      </p>
+                    )}
+                    {!category.blocked_by_plan_limit && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {t('categoriesCreated')}: {new Date(category.created_at).toLocaleDateString()}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end w-full md:w-auto mt-2 md:mt-0">
