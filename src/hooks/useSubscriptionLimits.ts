@@ -31,13 +31,7 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
 
       const { data: subscription, error: subError } = await supabase
         .from('subscriptions')
-        .select(`
-          *,
-          subscription_plans (
-            max_products,
-            max_categories
-          )
-        `)
+        .select('*')
         .eq('restaurant_id', restaurantId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -66,6 +60,12 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
         return;
       }
 
+      const endDate = new Date(subscription.end_date);
+      const now = new Date();
+      const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const isExpired = subscription.status !== 'active' || endDate < now;
+      const isActive = subscription.status === 'active' && endDate >= now;
+
       const { count: productCount, error: productError } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
@@ -82,28 +82,26 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
 
       if (categoryError) throw categoryError;
 
-      const maxProducts = subscription.subscription_plans?.max_products || subscription.max_products || 0;
-      const maxCategories = subscription.subscription_plans?.max_categories || 10;
+      const maxProducts = subscription.max_products || 0;
+
+      const planName = subscription.plan_name.toLowerCase();
+      let maxCategories = 10;
+      if (planName === 'free') maxCategories = 5;
+      else if (planName === 'basic') maxCategories = 15;
+      else if (planName === 'pro') maxCategories = 25;
+      else if (planName === 'business') maxCategories = 50;
 
       const currentProducts = productCount || 0;
       const currentCategories = categoryCount || 0;
-
-      const isSubscriptionActive = subscription.status === 'active' && endDate >= now;
 
       setLimits({
         max_products: maxProducts,
         max_categories: maxCategories,
         current_products: currentProducts,
         current_categories: currentCategories,
-        canCreateProduct: isSubscriptionActive && currentProducts < maxProducts,
-        canCreateCategory: isSubscriptionActive && currentCategories < maxCategories,
+        canCreateProduct: isActive && currentProducts < maxProducts,
+        canCreateCategory: isActive && currentCategories < maxCategories,
       });
-
-      const endDate = new Date(subscription.end_date);
-      const now = new Date();
-      const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      const isExpired = subscription.status !== 'active' || endDate < now;
-      const isActive = subscription.status === 'active' && endDate >= now;
 
       setStatus({
         isExpired,
