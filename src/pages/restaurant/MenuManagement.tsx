@@ -1293,15 +1293,25 @@ export const MenuManagement: React.FC = () => {
 
                   <div className="space-y-2">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" icon={Edit} onClick={() => handleEditProduct(product)} />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Edit}
+                        onClick={() => handleEditProduct(product)}
+                        disabled={product.blocked_by_plan_limit}
+                        className={product.blocked_by_plan_limit ? 'opacity-50 cursor-not-allowed' : ''}
+                        title={product.blocked_by_plan_limit ? 'No se puede editar un producto bloqueado' : 'Editar'}
+                      />
 
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDuplicateProduct(product)}
-                        className="text-blue-600 hover:text-blue-700"
+                        disabled={product.blocked_by_plan_limit}
+                        className={product.blocked_by_plan_limit ? 'opacity-50 cursor-not-allowed text-gray-400' : 'text-blue-600 hover:text-blue-700'}
+                        title={product.blocked_by_plan_limit ? 'No se puede duplicar un producto bloqueado' : 'Duplicar'}
                       >
-                        <Copy className="w-4 h-4 text-blue-600" />
+                        <Copy className={`w-4 h-4 ${product.blocked_by_plan_limit ? 'text-gray-400' : 'text-blue-600'}`} />
                       </Button>
 
                       <Button
@@ -1310,6 +1320,7 @@ export const MenuManagement: React.FC = () => {
                         icon={Trash2}
                         onClick={() => openDeleteConfirm(product)}
                         className="text-red-600 hover:text-red-700"
+                        title="Eliminar"
                       />
                     </div>
 
@@ -1317,7 +1328,13 @@ export const MenuManagement: React.FC = () => {
                       <select
                         value={product.status}
                         onChange={(e) => handleChangeProductStatus(product.id, e.target.value as Product['status'])}
-                        className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        disabled={product.blocked_by_plan_limit}
+                        className={`flex-1 text-xs px-2 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                          product.blocked_by_plan_limit
+                            ? 'bg-gray-100 border-gray-200 cursor-not-allowed opacity-50'
+                            : 'bg-white border-gray-300'
+                        }`}
+                        title={product.blocked_by_plan_limit ? 'No se puede cambiar el status de un producto bloqueado' : 'Cambiar status'}
                       >
                         <option value="active">{t('active')}</option>
                         <option value="out_of_stock">{t('outOfStock')}</option>

@@ -708,25 +708,38 @@ export const CategoriesManagement: React.FC = () => {
                   <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end w-full md:w-auto mt-2 md:mt-0">
                     <button
                       onClick={() => handleEdit(category)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      disabled={category.blocked_by_plan_limit}
+                      className={`p-2 rounded-lg transition-colors ${
+                        category.blocked_by_plan_limit
+                          ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                          : 'hover:bg-gray-100'
+                      }`}
+                      title={category.blocked_by_plan_limit ? 'No se puede editar una categoría bloqueada' : 'Editar'}
                     >
-                      <Pencil className="w-4 h-4 text-blue-600" />
+                      <Pencil className={`w-4 h-4 ${category.blocked_by_plan_limit ? 'text-gray-400' : 'text-blue-600'}`} />
                     </button>
 
                     <button
                       onClick={() => toggleActive(category.id)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      disabled={category.blocked_by_plan_limit}
+                      className={`p-2 rounded-lg transition-colors ${
+                        category.blocked_by_plan_limit
+                          ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                          : 'hover:bg-gray-100'
+                      }`}
+                      title={category.blocked_by_plan_limit ? 'No se puede activar una categoría bloqueada' : category.is_active ? 'Desactivar' : 'Activar'}
                     >
                       {category.is_active ? (
-                        <EyeOff className="w-4 h-4 text-orange-600" />
+                        <EyeOff className={`w-4 h-4 ${category.blocked_by_plan_limit ? 'text-gray-400' : 'text-orange-600'}`} />
                       ) : (
-                        <Eye className="w-4 h-4 text-green-600" />
+                        <Eye className={`w-4 h-4 ${category.blocked_by_plan_limit ? 'text-gray-400' : 'text-green-600'}`} />
                       )}
                     </button>
 
                     <button
                       onClick={() => openDeleteConfirm(category)}
                       className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="Eliminar"
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </button>
