@@ -20,11 +20,13 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../hooks/useToast';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { OrderProductSelector } from '../../components/restaurant/OrderProductSelector';
+import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 import { formatCurrency } from '../../utils/currencyUtils';
 
 /**
@@ -55,6 +57,7 @@ export const OrdersManagement: React.FC = () => {
   const { showToast } = useToast();
   const { t } = useLanguage();
   const currency = restaurant?.settings?.currency || 'USD';
+  const { status } = useSubscriptionLimits(restaurant?.id);
 
   // ===== Pagination/List =====
   const ITEMS_PER_PAGE = 10;
@@ -1455,6 +1458,15 @@ Tu pedido está en estado: *${order.status}*.`;
           </Button>
         </div>
       </div>
+
+      {/* Subscription Expired Banner */}
+      {status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="expired"
+          planName={status.planName}
+          daysRemaining={status.daysRemaining}
+        />
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">

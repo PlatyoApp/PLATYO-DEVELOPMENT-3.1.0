@@ -526,7 +526,7 @@ export const CategoriesManagement: React.FC = () => {
         />
       )}
 
-      {limits && !limits.canCreateCategory && !status?.isExpired && (
+      {limits && status?.isActive && !status?.isExpired && limits.current_categories >= limits.max_categories && (
         <SubscriptionExpiredBanner
           type="limit_reached"
           planName={status?.planName}
@@ -536,7 +536,7 @@ export const CategoriesManagement: React.FC = () => {
         />
       )}
 
-      {limits && limits.current_categories >= limits.max_categories * 0.8 && limits.canCreateCategory && (
+      {limits && status?.isActive && !status?.isExpired && limits.current_categories >= limits.max_categories * 0.8 && limits.current_categories < limits.max_categories && (
         <SubscriptionExpiredBanner
           type="near_limit"
           planName={status?.planName}

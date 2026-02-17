@@ -9,10 +9,12 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../hooks/useToast';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
+import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 import { formatCurrency } from '../../utils/currencyUtils';
 
 interface CustomerRow extends Customer {
@@ -31,6 +33,7 @@ export const CustomersManagement: React.FC = () => {
   const { t } = useLanguage();
   const { showToast } = useToast();
   const currency = restaurant?.settings?.currency || 'USD';
+  const { status } = useSubscriptionLimits(restaurant?.id);
 
   // UI state
   const [showFilters, setShowFilters] = useState(false);
@@ -1029,6 +1032,15 @@ export const CustomersManagement: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Subscription Expired Banner */}
+      {status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="expired"
+          planName={status.planName}
+          daysRemaining={status.daysRemaining}
+        />
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">

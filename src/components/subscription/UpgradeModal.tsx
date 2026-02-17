@@ -58,32 +58,42 @@ export function UpgradeModal({
 
   const plans = [
     {
+      name: 'FREE',
+      price: 'Gratis',
+      duration: '1 mes',
+      products: 5,
+      categories: 5,
+      features: ['Hasta 5 productos', 'Hasta 5 categorías', 'Menú digital', 'Gestión de órdenes', 'Soporte por email'],
+      isCurrent: currentPlan.toLowerCase() === 'free',
+    },
+    {
       name: 'Basic',
-      products: 50,
-      categories: 10,
+      price: '$49.900',
+      duration: '/mes',
+      products: 25,
+      categories: 15,
+      features: ['Hasta 25 productos', 'Hasta 15 categorías', 'Análisis y estadísticas', 'Personalización avanzada', 'Soporte prioritario'],
       isCurrent: currentPlan.toLowerCase() === 'basic',
     },
     {
       name: 'Pro',
-      products: 200,
-      categories: 20,
+      price: '$99.900',
+      duration: '/mes',
+      products: 100,
+      categories: 25,
+      features: ['Hasta 100 productos', 'Hasta 25 categorías', 'Análisis avanzados', 'Soporte prioritario 24/7', 'Personalización completa'],
       isCurrent: currentPlan.toLowerCase() === 'pro',
     },
     {
       name: 'Business',
-      products: 1000,
+      price: '$199.900',
+      duration: '/mes',
+      products: 200,
       categories: 50,
+      features: ['Hasta 200 productos', 'Hasta 50 categorías', 'Todo lo de Pro +', 'Asistente virtual con IA', 'API personalizada', 'Soporte dedicado'],
       isCurrent: currentPlan.toLowerCase() === 'business',
       popular: true,
     },
-  ];
-
-  const features = [
-    'Unlimited orders',
-    'Advanced analytics',
-    'Custom domain support',
-    'Priority support',
-    'Advanced customization',
   ];
 
   const handleContactSupport = () => {
@@ -138,22 +148,30 @@ export function UpgradeModal({
                     </span>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <h5 className={`text-lg font-bold ${plan.isCurrent ? 'text-gray-700' : 'text-blue-900'}`}>
-                    {plan.name}
-                  </h5>
-                  <div className="flex gap-4 text-sm">
-                    <div className="flex items-center gap-1">
-                      <Package className="w-4 h-4" />
-                      <span className="font-medium">{plan.products} products</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <FolderTree className="w-4 h-4" />
-                      <span className="font-medium">{plan.categories} categories</span>
+                <div className="space-y-3">
+                  <div>
+                    <h5 className={`text-lg font-bold ${plan.isCurrent ? 'text-gray-700' : 'text-blue-900'}`}>
+                      {plan.name}
+                    </h5>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className={`text-xl font-bold ${plan.isCurrent ? 'text-gray-600' : 'text-blue-800'}`}>
+                        {plan.price}
+                      </span>
+                      {plan.duration && (
+                        <span className="text-sm text-gray-500">{plan.duration}</span>
+                      )}
                     </div>
                   </div>
+                  <ul className="space-y-1.5">
+                    {plan.features.map((feature, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-xs text-gray-700">
+                        <Check className="w-3.5 h-3.5 text-green-600 flex-shrink-0 mt-0.5" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
                   {!plan.isCurrent && (
-                    <p className="text-xs text-gray-600 pt-1">
+                    <p className="text-xs text-blue-600 font-medium pt-2">
                       +{plan.products - (currentLimit || 0)} more {reason === 'categories' ? 'categories' : 'products'} available
                     </p>
                   )}
@@ -163,18 +181,16 @@ export function UpgradeModal({
           </div>
         </div>
 
-        <div className="bg-gray-50 rounded-lg p-4">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">
-            All Plans Include
-          </h4>
-          <ul className="space-y-2">
-            {features.map((feature, index) => (
-              <li key={index} className="flex items-center gap-2 text-sm text-gray-700">
-                <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                {feature}
-              </li>
-            ))}
-          </ul>
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+          <p className="text-sm text-center text-gray-700">
+            ¿Necesitas ayuda para elegir el plan correcto?{' '}
+            <button
+              onClick={handleContactSupport}
+              className="text-blue-600 hover:text-blue-700 font-semibold underline"
+            >
+              Contáctanos
+            </button>
+          </p>
         </div>
 
         <div className="flex gap-3 pt-4 border-t border-gray-200">

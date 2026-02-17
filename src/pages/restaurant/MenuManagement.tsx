@@ -1051,7 +1051,7 @@ export const MenuManagement: React.FC = () => {
         />
       )}
 
-      {limits && !limits.canCreateProduct && !status?.isExpired && (
+      {limits && status?.isActive && !status?.isExpired && limits.current_products >= limits.max_products && (
         <SubscriptionExpiredBanner
           type="limit_reached"
           planName={status?.planName}
@@ -1073,7 +1073,7 @@ export const MenuManagement: React.FC = () => {
         />
       )}
 
-      {limits && limits.current_products >= limits.max_products * 0.8 && limits.canCreateProduct && (
+      {limits && status?.isActive && !status?.isExpired && limits.current_products >= limits.max_products * 0.8 && limits.current_products < limits.max_products && (
         <SubscriptionExpiredBanner
           type="near_limit"
           planName={status?.planName}

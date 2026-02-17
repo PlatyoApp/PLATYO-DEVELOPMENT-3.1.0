@@ -6,15 +6,18 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../hooks/useToast';
+import { useSubscriptionLimits } from '../../hooks/useSubscriptionLimits';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 
 export const RestaurantSettings: React.FC = () => {
   const { restaurant, user } = useAuth();
   const { showToast } = useToast();
   const { t, setLanguage } = useLanguage();
+  const { status } = useSubscriptionLimits(restaurant?.id);
   const [activeTab, setActiveTab] = useState('general');
   const [formData, setFormData] = useState<Restaurant | null>(null);
   const [loading, setLoading] = useState(false);
@@ -466,6 +469,15 @@ export const RestaurantSettings: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Subscription Expired Banner */}
+      {status?.isExpired && (
+        <SubscriptionExpiredBanner
+          type="expired"
+          planName={status.planName}
+          daysRemaining={status.daysRemaining}
+        />
+      )}
 
       <div className="bg-white rounded-lg shadow">
         {/* Tabs */}
