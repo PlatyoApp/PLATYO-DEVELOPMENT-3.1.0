@@ -25,7 +25,6 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { UpgradeModal } from '../../components/subscription/UpgradeModal';
 
@@ -529,27 +528,6 @@ export const CategoriesManagement: React.FC = () => {
           </Button>
         </div>
       </div>
-
-      {limits && limits.current_categories >= limits.max_categories && (
-        <SubscriptionExpiredBanner
-          type="limit_reached"
-          planName={status?.planName}
-          current={limits.current_categories}
-          max={limits.max_categories}
-          resourceType="categories"
-        />
-      )}
-
-      {limits && limits.current_categories >= limits.max_categories * 0.8 && limits.current_categories < limits.max_categories && (
-        <SubscriptionExpiredBanner
-          type="near_limit"
-          planName={status?.planName}
-          current={limits.current_categories}
-          max={limits.max_categories}
-          resourceType="categories"
-          dismissible
-        />
-      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

@@ -14,7 +14,6 @@ import { Badge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { formatCurrency } from '../../utils/currencyUtils';
 

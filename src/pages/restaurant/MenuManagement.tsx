@@ -27,7 +27,6 @@ import { Modal } from '../../components/ui/Modal';
 import { ProductForm } from '../../components/restaurant/ProductForm';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { formatCurrency } from '../../utils/currencyUtils';
-import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { ProductActivationModal } from '../../components/subscription/ProductActivationModal';
 import { UpgradeModal } from '../../components/subscription/UpgradeModal';
@@ -1054,39 +1053,6 @@ export const MenuManagement: React.FC = () => {
           </Button>
         </div>
       </div>
-
-      {limits && limits.current_products >= limits.max_products && (
-        <SubscriptionExpiredBanner
-          type="limit_reached"
-          planName={status?.planName}
-          current={limits.current_products}
-          max={limits.max_products}
-          resourceType="products"
-        />
-      )}
-
-      {archivedCount > 0 && (
-        <SubscriptionExpiredBanner
-          type="downgraded"
-          planName={status?.planName}
-          max={limits?.max_products}
-          resourceType="products"
-          archivedCount={archivedCount}
-          onViewArchived={() => setShowFilterArchived(true)}
-          dismissible
-        />
-      )}
-
-      {limits && limits.current_products >= limits.max_products * 0.8 && limits.current_products < limits.max_products && (
-        <SubscriptionExpiredBanner
-          type="near_limit"
-          planName={status?.planName}
-          current={limits.current_products}
-          max={limits.max_products}
-          resourceType="products"
-          dismissible
-        />
-      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
