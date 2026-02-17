@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { SubscriptionLimits, SubscriptionStatus, LimitCheckResult } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface UseSubscriptionLimitsReturn {
   limits: SubscriptionLimits | null;
@@ -14,6 +15,7 @@ interface UseSubscriptionLimitsReturn {
 }
 
 export function useSubscriptionLimits(restaurantId: string | undefined): UseSubscriptionLimitsReturn {
+  const { subscription: contextSubscription } = useAuth();
   const [limits, setLimits] = useState<SubscriptionLimits | null>(null);
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,38 +28,61 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
     }
 
     try {
-      setLoading(true);
       setError(null);
 
-      const { data: subscription, error: subError } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('restaurant_id', restaurantId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      let subscription = contextSubscription;
 
-      if (subError) throw subError;
+      if (subscription && subscription.restaurant_id === restaurantId) {
+        const endDate = new Date(subscription.end_date);
+        const now = new Date();
+        const daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const isExpired = subscription.status !== 'active' || endDate < now;
+        const isActive = subscription.status === 'active' && endDate >= now;
 
-      if (!subscription) {
-        setError('No subscription found');
         setStatus({
-          isExpired: true,
-          isActive: false,
-          daysRemaining: 0,
-          planName: 'None',
-          endDate: new Date().toISOString(),
+          isExpired,
+          isActive,
+          daysRemaining: Math.max(0, daysRemaining),
+          planName: subscription.plan_name,
+          endDate: subscription.end_date,
         });
-        setLimits({
-          max_products: 0,
-          max_categories: 0,
-          current_products: 0,
-          current_categories: 0,
-          canCreateProduct: false,
-          canCreateCategory: false,
-        });
-        setLoading(false);
-        return;
+      }
+
+      setLoading(true);
+
+      if (!subscription || subscription.restaurant_id !== restaurantId) {
+        const { data: fetchedSubscription, error: subError } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('restaurant_id', restaurantId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (subError) throw subError;
+
+        if (!fetchedSubscription) {
+          setError('No subscription found');
+          setStatus({
+            isExpired: true,
+            isActive: false,
+            daysRemaining: 0,
+            planName: 'None',
+            endDate: new Date().toISOString(),
+          });
+          setLimits({
+            max_products: 0,
+            max_categories: 0,
+            current_products: 0,
+            current_categories: 0,
+            canCreateProduct: false,
+            canCreateCategory: false,
+          });
+          setLoading(false);
+          return;
+        }
+
+        subscription = fetchedSubscription;
       }
 
       const endDate = new Date(subscription.end_date);
@@ -117,7 +142,7 @@ export function useSubscriptionLimits(restaurantId: string | undefined): UseSubs
       setError(err instanceof Error ? err.message : 'Failed to fetch subscription data');
       setLoading(false);
     }
-  }, [restaurantId]);
+  }, [restaurantId, contextSubscription]);
 
   useEffect(() => {
     fetchSubscriptionData();

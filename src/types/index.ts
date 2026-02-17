@@ -342,6 +342,7 @@ export interface RegisterData {
 export interface AuthContextType {
   user: User | null;
   restaurant: Restaurant | null;
+  subscription: Subscription | null;
   isAuthenticated: boolean;
   loading: boolean;
   requirePasswordChange?: boolean;

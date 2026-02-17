@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { AuthContextType, User, Restaurant, RegisterData } from '../types';
+import { AuthContextType, User, Restaurant, RegisterData, Subscription } from '../types';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,6 +19,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [requirePasswordChange, setRequirePasswordChange] = useState(false);
@@ -63,6 +64,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           } else if (event === 'SIGNED_OUT') {
             setUser(null);
             setRestaurant(null);
+            setSubscription(null);
             setIsAuthenticated(false);
             setLoading(false);
             loadingUserRef.current = false;
@@ -109,6 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         setUser(null);
         setRestaurant(null);
+        setSubscription(null);
         setIsAuthenticated(false);
         setLoading(false);
         loadingUserRef.current = false;
@@ -120,6 +123,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         setUser(null);
         setRestaurant(null);
+        setSubscription(null);
         setIsAuthenticated(false);
         setLoading(false);
         loadingUserRef.current = false;
@@ -141,6 +145,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!restaurantError && restaurantData) {
           setRestaurant(restaurantData as Restaurant);
         }
+
+        const { data: subscriptionData } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('restaurant_id', userData.restaurant_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (subscriptionData) {
+          setSubscription(subscriptionData as Subscription);
+        }
       }
 
       if (userData.role === 'superadmin') {
@@ -160,6 +176,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       setUser(null);
       setRestaurant(null);
+      setSubscription(null);
       setIsAuthenticated(false);
       setLoading(false);
       loadingUserRef.current = false;
@@ -398,6 +415,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setUser(null);
       setRestaurant(null);
+      setSubscription(null);
       setIsAuthenticated(false);
       setRequirePasswordChange(false);
       loadingUserRef.current = false;
@@ -427,6 +445,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     restaurant,
+    subscription,
     isAuthenticated,
     login,
     register,
