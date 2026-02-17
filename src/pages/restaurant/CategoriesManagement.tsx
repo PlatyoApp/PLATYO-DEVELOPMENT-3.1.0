@@ -220,6 +220,17 @@ export const CategoriesManagement: React.FC = () => {
           return next;
         });
       } else {
+        const limitCheck = await checkCategoryLimit();
+        if (!limitCheck.canCreate) {
+          showToast(
+            'warning',
+            'Límite de categorías alcanzado',
+            `Has alcanzado el límite de ${limitCheck.maxCount} categorías de tu plan ${status?.planName || ''}. Actualiza tu plan para agregar más categorías.`,
+            6000
+          );
+          setShowUpgradeModal(true);
+          return;
+        }
         const maxOrder = Math.max(...categories.map((c) => c.display_order || 0), 0);
 
         const { data: inserted, error } = await supabase

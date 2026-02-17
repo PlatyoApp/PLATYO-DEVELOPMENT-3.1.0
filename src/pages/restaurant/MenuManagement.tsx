@@ -737,6 +737,18 @@ export const MenuManagement: React.FC = () => {
     if (!restaurant?.id) return;
 
     try {
+      const limitCheck = await checkProductLimit();
+      if (!limitCheck.canCreate) {
+        showToast(
+          'warning',
+          'Límite de productos alcanzado',
+          `Has alcanzado el límite de ${limitCheck.maxCount} productos de tu plan ${status?.planName || ''}. Actualiza tu plan para duplicar más productos.`,
+          6000
+        );
+        setShowUpgradeModal(true);
+        return;
+      }
+
       const { data: full, error: fullError } = await supabase
         .from('products')
         .select('*')
@@ -832,6 +844,20 @@ export const MenuManagement: React.FC = () => {
     if (!restaurant) return;
 
     try {
+      if (!editingProductId) {
+        const limitCheck = await checkProductLimit();
+        if (!limitCheck.canCreate) {
+          showToast(
+            'warning',
+            'Límite de productos alcanzado',
+            `Has alcanzado el límite de ${limitCheck.maxCount} productos de tu plan ${status?.planName || ''}. Actualiza tu plan para agregar más productos.`,
+            6000
+          );
+          setShowUpgradeModal(true);
+          return;
+        }
+      }
+
       const minPrice =
         productData.variations && productData.variations.length > 0
           ? Math.min(...productData.variations.map((v: any) => v.price))
