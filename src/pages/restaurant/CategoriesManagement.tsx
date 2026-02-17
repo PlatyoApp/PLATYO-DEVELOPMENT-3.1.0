@@ -25,7 +25,6 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { UpgradeModal } from '../../components/subscription/UpgradeModal';
 
 export const CategoriesManagement: React.FC = () => {
@@ -478,17 +477,6 @@ export const CategoriesManagement: React.FC = () => {
   };
 
   // ===== UI =====
-  if (status?.isExpired || !status?.isActive) {
-    return (
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">{t('categoryManagement')}</h1>
-        </div>
-        <SubscriptionBlocker planName={status?.planName} />
-      </div>
-    );
-  }
-
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">

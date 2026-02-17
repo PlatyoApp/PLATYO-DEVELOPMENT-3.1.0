@@ -27,7 +27,6 @@ import { Modal } from '../../components/ui/Modal';
 import { ProductForm } from '../../components/restaurant/ProductForm';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { formatCurrency } from '../../utils/currencyUtils';
-import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { ProductActivationModal } from '../../components/subscription/ProductActivationModal';
 import { UpgradeModal } from '../../components/subscription/UpgradeModal';
 import { subscriptionService } from '../../services/subscriptionService';
@@ -1003,17 +1002,6 @@ export const MenuManagement: React.FC = () => {
   }, [products]);
 
   // ===== UI =====
-  if (status?.isExpired || !status?.isActive) {
-    return (
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">{t('productManagement')}</h1>
-        </div>
-        <SubscriptionBlocker planName={status?.planName} />
-      </div>
-    );
-  }
-
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">

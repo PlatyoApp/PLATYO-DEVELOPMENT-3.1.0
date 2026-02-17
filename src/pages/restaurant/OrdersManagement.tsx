@@ -26,7 +26,6 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { OrderProductSelector } from '../../components/restaurant/OrderProductSelector';
-import { SubscriptionBlocker } from '../../components/subscription/SubscriptionBlocker';
 import { formatCurrency } from '../../utils/currencyUtils';
 
 /**
@@ -1428,17 +1427,6 @@ Tu pedido está en estado: *${order.status}*.`;
   // =============================
   // UI
   // =============================
-  if (status?.isExpired || !status?.isActive) {
-    return (
-      <div className="p-6">
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('orderManagement')}</h1>
-        </div>
-        <SubscriptionBlocker planName={status?.planName} />
-      </div>
-    );
-  }
-
   return (
     <div className="p-6">
       {/* Header */}
