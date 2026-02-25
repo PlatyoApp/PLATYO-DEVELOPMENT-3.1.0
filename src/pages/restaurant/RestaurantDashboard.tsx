@@ -446,9 +446,7 @@ export const RestaurantDashboard: React.FC = () => {
             
           </div>
         </div>
-      )}
-      
-      
+      )}  
     </div>
   );
 };
