@@ -469,32 +469,7 @@ export const LandingPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="mt-16 grid grid-cols-3 gap-8 max-w-3xl mx-auto">
-              <div>
-                <div className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
-                  100+
-                </div>
-                <div className="text-sm md:text-base text-gray-600 mt-1">
-                  {t('statActiveRestaurants')}
-                </div>
-              </div>
-              <div>
-                <div className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
-                  10K+
-                </div>
-                <div className="text-sm md:text-base text-gray-600 mt-1">
-                  {t('statOrdersProcessed')}
-                </div>
-              </div>
-              <div>
-                <div className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
-                  98%
-                </div>
-                <div className="text-sm md:text-base text-gray-600 mt-1">
-                  {t('statSatisfaction')}
-                </div>
-              </div>
-            </div>
+
           </div>
         </div>
       </section>
