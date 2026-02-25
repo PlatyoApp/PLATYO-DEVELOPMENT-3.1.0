@@ -443,6 +443,32 @@ export const RestaurantDashboard: React.FC = () => {
             >
               Administrar Suscripción →
             </a>
+                                <button
+                      onClick={() => {
+                        if (blocked) {
+                          onTabChange('subscription');
+                          onClose();
+                          return;
+                        }
+                        onTabChange(tab.id);
+                        onClose();
+                      }}
+                      className={`
+                        w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                        ${isActive && !blocked
+                          ? 'bg-blue-100 text-blue-700'
+                          : blocked
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}
+                      `}
+                      title={blocked ? 'Subscription expired - Renew to access this feature' : ''}
+                    >
+                      <div className="flex items-center">
+                        <Icon className="w-5 h-5 mr-3" />
+                        {tab.name}
+                      </div>
+                      {blocked && <Lock className="w-4 h-4" />}
+                    </button>
           </div>
         </div>
       )}
