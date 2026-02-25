@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { AuthContextType, User, Restaurant, RegisterData, Subscription } from '../types';
 import { supabase } from '../lib/supabase';
+import { translateSupabaseError } from '../utils/errorTranslations';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -192,16 +193,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
-        return { success: false, error: error.message };
+        return { success: false, error: translateSupabaseError(error) };
       }
 
       if (data.user) {
         return { success: true };
       }
 
-      return { success: false, error: 'Error al iniciar sesión' };
-    } catch {
-      return { success: false, error: 'Error al iniciar sesión' };
+      return { success: false, error: translateSupabaseError('Error al iniciar sesión') };
+    } catch (err) {
+      return { success: false, error: translateSupabaseError(err) };
     }
   };
 
@@ -227,14 +228,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return { success: true };
     } catch (error: any) {
-      if (error?.message?.includes('weak') || error?.message?.includes('easy to guess')) {
-        return {
-          success: false,
-          error: 'La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común (como "password123", "12345678", etc.)'
-        };
-      }
-
-      return { success: false, error: error?.message || 'Error al cambiar la contraseña' };
+      return { success: false, error: translateSupabaseError(error) };
     }
   };
 
@@ -265,9 +259,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (authError) {
-        if (authError.message?.includes('weak') || authError.message?.includes('easy to guess')) {
-          throw new Error('La contraseña es débil. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas y números.');
-        }
         throw authError;
       }
       if (!authData.user) throw new Error('No se pudo crear el usuario');
@@ -368,16 +359,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: true };
     } catch (error: any) {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-
-      if (error?.message?.includes('weak') || error?.message?.includes('easy to guess')) {
-        return { success: false, error: 'La contraseña es débil. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas y números.' };
-      }
-
-      if (error?.message?.includes('duplicate') || error?.message?.includes('already exists')) {
-        return { success: false, error: 'Ya existe una cuenta con este correo electrónico.' };
-      }
-
-      return { success: false, error: error?.message || 'Error al registrar. Por favor intenta nuevamente.' };
+      return { success: false, error: translateSupabaseError(error) };
     }
   };
 
@@ -393,9 +375,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (error) {
         console.error('Password reset error:', error);
-        if (error.message.includes('User not found')) {
-          return { success: false, error: 'No se encontró una cuenta con ese email' };
-        }
         throw error;
       }
 
@@ -403,7 +382,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: true };
     } catch (error: any) {
       console.error('Password reset exception:', error);
-      return { success: false, error: error?.message || 'Error al solicitar recuperación' };
+      return { success: false, error: translateSupabaseError(error) };
     }
   };
 

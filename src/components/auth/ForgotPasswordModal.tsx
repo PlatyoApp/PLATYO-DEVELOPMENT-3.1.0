@@ -4,6 +4,7 @@ import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { translateSupabaseError } from '../../utils/errorTranslations';
 
 interface ForgotPasswordModalProps {
   isOpen: boolean;
@@ -35,10 +36,10 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           handleClose();
         }, 4000);
       } else {
-        setError(result.error || t('requestSendError'));
+        setError(translateSupabaseError(result.error || t('requestSendError')));
       }
     } catch (err) {
-      setError(t('unexpectedError'));
+      setError(translateSupabaseError(err));
     } finally {
       setLoading(false);
     }

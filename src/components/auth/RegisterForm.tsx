@@ -6,6 +6,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Modal } from '../ui/Modal';
 import { TermsAndConditions } from './TermsAndConditions';
+import { translateSupabaseError } from '../../utils/errorTranslations';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
@@ -126,16 +127,16 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onSwitchToLogin }) =
          */
         // setSuccess(true);
       } else {
-        const msg = result.error || t('registerError');
-        const looksLikePassword = /weak|easy|password|contrase/i.test(msg);
+        const msg = translateSupabaseError(result.error || t('registerError'));
+        const looksLikePassword = /weak|easy|password|contrase|débil/i.test(msg);
 
         setErrors(prev => ({
           ...prev,
           ...(looksLikePassword ? { password: msg } : { general: msg }),
         }));
       }
-    } catch {
-      setErrors({ general: t('unexpectedError') });
+    } catch (err) {
+      setErrors({ general: translateSupabaseError(err) });
     } finally {
       setLoading(false);
     }

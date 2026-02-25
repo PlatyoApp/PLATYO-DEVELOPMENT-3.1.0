@@ -5,6 +5,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { translateSupabaseError } from '../../utils/errorTranslations';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -29,10 +30,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
     try {
       const result = await login(email, password);
       if (!result.success) {
-        setError(result.error || 'Error al iniciar sesión');
+        setError(translateSupabaseError(result.error));
       }
     } catch (err) {
-      setError('Error inesperado');
+      setError(translateSupabaseError(err));
     } finally {
       setLoading(false);
     }

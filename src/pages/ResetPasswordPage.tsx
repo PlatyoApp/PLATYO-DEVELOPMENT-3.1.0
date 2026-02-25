@@ -4,6 +4,7 @@ import { Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { translateSupabaseError } from '../utils/errorTranslations';
 
 export const ResetPasswordPage: React.FC = () => {
   const [password, setPassword] = useState('');
@@ -55,7 +56,7 @@ export const ResetPasswordPage: React.FC = () => {
 
       if (sessionError) {
         console.error('Error setting session:', sessionError);
-        setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
+        setError(translateSupabaseError(sessionError));
       } else if (!data.session) {
         console.error('No session returned after setSession');
         setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
@@ -99,11 +100,7 @@ export const ResetPasswordPage: React.FC = () => {
 
       if (updateError) {
         console.error('Error updating password:', updateError);
-        if (updateError.message?.includes('weak') || updateError.message?.includes('easy to guess')) {
-          setError('La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común.');
-        } else {
-          setError(updateError.message);
-        }
+        setError(translateSupabaseError(updateError));
         setLoading(false);
         return;
       }
@@ -126,7 +123,7 @@ export const ResetPasswordPage: React.FC = () => {
       }, 3000);
     } catch (err: any) {
       console.error('Error in password reset:', err);
-      setError(err.message || 'Error al cambiar la contraseña');
+      setError(translateSupabaseError(err));
       setLoading(false);
     }
   };

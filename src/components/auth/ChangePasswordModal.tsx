@@ -4,6 +4,7 @@ import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { translateSupabaseError } from '../../utils/errorTranslations';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -39,12 +40,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      const errorMessage = err.message || 'Error al cambiar la contraseña';
-      if (errorMessage.includes('weak') || errorMessage.includes('easy to guess')) {
-        setError('La contraseña es muy débil o común. Debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y no ser una contraseña común.');
-      } else {
-        setError(errorMessage);
-      }
+      setError(translateSupabaseError(err));
     } finally {
       setLoading(false);
     }
