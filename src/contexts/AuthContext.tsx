@@ -367,18 +367,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('Requesting password reset for:', email);
 
-      const { data: userData, error: userCheckError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email.trim().toLowerCase())
-        .maybeSingle();
+      const { data: emailExists, error: checkError } = await supabase
+        .rpc('check_email_exists', { check_email: email.trim() });
 
-      if (userCheckError) {
-        console.error('Error checking user:', userCheckError);
-        throw userCheckError;
+      if (checkError) {
+        console.error('Error checking email:', checkError);
+        throw checkError;
       }
 
-      if (!userData) {
+      if (!emailExists) {
         console.log('User not found with email:', email);
         return { success: false, error: 'No se encontró una cuenta registrada con este correo electrónico' };
       }
