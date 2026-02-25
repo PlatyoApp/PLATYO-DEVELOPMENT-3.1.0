@@ -20,7 +20,7 @@ export function translateSupabaseError(error: any): string {
     'user already registered':
       'El usuario ya está registrado',
     'user not found':
-      'Usuario no encontrado',
+      'No se encontró una cuenta registrada con este correo electrónico',
     'invalid email':
       'Correo electrónico inválido',
     'email address is invalid':
