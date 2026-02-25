@@ -348,7 +348,7 @@ export const RestaurantDashboard: React.FC = () => {
       </div>
 
       {/*Status de suscripcion*/}
-{limits && status && (
+      {limits && status && (
         <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
           <div className="flex items-start justify-between mb-4">
             <div>
