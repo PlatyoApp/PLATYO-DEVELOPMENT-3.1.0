@@ -30,32 +30,6 @@ export const ResetPasswordPage: React.FC = () => {
         return;
       }
 
-      // Check for code in query params (new PKCE flow)
-      const queryParams = new URLSearchParams(window.location.search);
-      const code = queryParams.get('code');
-
-      if (code) {
-        console.log('Found code in query params, exchanging for session...');
-        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-
-        if (exchangeError) {
-          console.error('Error exchanging code:', exchangeError);
-          setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
-          return;
-        }
-
-        if (!data.session) {
-          console.error('No session returned after exchanging code');
-          setError('El enlace de recuperación ha expirado o es inválido. Por favor solicita uno nuevo.');
-          return;
-        }
-
-        console.log('Session created successfully from code:', data.session);
-        setIsValidRecovery(true);
-        return;
-      }
-
-      // Fallback to old flow with tokens in hash
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
