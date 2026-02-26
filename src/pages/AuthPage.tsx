@@ -172,7 +172,7 @@ export const AuthPage: React.FC = () => {
               <div className="text-sm text-gray-400">{t('statOrdersProcessed')}</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-white mb-1">98%</div>
+              <div className="text-3xl font-bold text-white mb-1">+98%</div>
               <div className="text-sm text-gray-400">{t('statSatisfaction')}</div>
             </div>
           </div>
