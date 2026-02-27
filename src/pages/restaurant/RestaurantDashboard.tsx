@@ -11,6 +11,7 @@ import { formatCurrency } from '../../utils/currencyUtils';
 import { TutorialModal } from '../../components/restaurant/TutorialModal';
 import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
 import { subscriptionService } from '../../services/subscriptionService';
+import { Link } from 'react-router-dom';
 
 export const RestaurantDashboard: React.FC = () => {
   const { restaurant } = useAuth();
@@ -443,17 +444,6 @@ export const RestaurantDashboard: React.FC = () => {
             >
               Administrar Suscripción →
             </a>
-            <a
-  onClick={(e) => {
-    e.preventDefault(); // Evita que el navegador intente navegar
-    onTabChange('subscription');
-    onClose();
-  }}
-  className="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium cursor-pointer"
->
-  Suscripciones
-  <Eye className="w-4 h-4 flex-shrink-0" />
-</a>
           </div>
         </div>
       )}  
