@@ -13,7 +13,7 @@ import { SubscriptionExpiredBanner } from '../../components/subscription/Subscri
 import { subscriptionService } from '../../services/subscriptionService';
 
 
-export const RestaurantDashboard: React.FC = () => {
+export const RestaurantDashboard: React.FC<{ onTabChange: (tabId: string) => void }> = ({ onTabChange }) => {
   const { restaurant } = useAuth();
   const { t } = useLanguage();
 
