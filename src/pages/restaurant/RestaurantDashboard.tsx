@@ -10,8 +10,7 @@ import { Badge } from '../../components/ui/Badge';
 import { formatCurrency } from '../../utils/currencyUtils';
 import { TutorialModal } from '../../components/restaurant/TutorialModal';
 import { SubscriptionExpiredBanner } from '../../components/subscription/SubscriptionExpiredBanner';
-import { subscriptionService } from '../../services/subscriptionService;
-
+import { subscriptionService } from '../../services/subscriptionService';
 
 export const RestaurantDashboard: React.FC = () => {
   const { restaurant } = useAuth();
@@ -444,7 +443,6 @@ export const RestaurantDashboard: React.FC = () => {
             >
               Administrar Suscripción →
             </a>
-            
           </div>
         </div>
       )}  
