@@ -444,12 +444,12 @@ export const RestaurantDashboard: React.FC = () => {
             >
               Administrar Suscripción →
             </a>
-            <Link
-              to="/subscriptions" 
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
+            <button
+              onClick={() => onTabChange('subscription')}
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
             >
               Administrar Suscripción →
-            </Link>
+            </button>
           </div>
         </div>
       )}  
