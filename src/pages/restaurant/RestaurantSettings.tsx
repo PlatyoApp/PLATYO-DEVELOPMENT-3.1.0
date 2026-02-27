@@ -865,47 +865,21 @@ export const RestaurantSettings: React.FC = () => {
           )}
 
           {activeTab === 'hours' && (
-            <div className="space-y-4 md:space-y-6">
-              <div className="flex items-center gap-3 mb-4 md:mb-6">
-                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
-                  <Clock className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-base md:text-lg font-semibold text-gray-900">{t('businessHours')}</h3>
-                  <p className="text-sm text-gray-600">{t('config_hours_subtitle')}</p>
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-blue-50 to-white rounded-lg md:rounded-xl p-4 md:p-6 border border-blue-100 shadow-sm">
-                <h4 className="text-sm md:text-md font-semibold text-gray-900 mb-3 md:mb-4 flex items-center gap-2">
-                  <Clock className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
-                  {t('preparation_time_title')}
-                </h4>
-                <div className="space-y-3">
-                  <Input
-                    label={t('prep_time_label')}
-                    value={formData.settings.preparation_time || '30-45 minutos'}
-                    onChange={(e) => updateFormData('settings.preparation_time', e.target.value)}
-                    placeholder={t('prep_time_placeholder')}
-                  />
-                  <p className="text-xs text-gray-500">
-                    {t('prep_time_hint')}
-                  </p>
-                </div>
-              </div>
-
+            <div className="space-y-6">
               <div className="bg-gradient-to-br from-blue-50 to-white rounded-lg md:rounded-xl p-4 md:p-6 border border-blue-100 shadow-sm">
                 <h4 className="text-sm md:text-md font-semibold text-gray-900 mb-3 md:mb-4 flex items-center gap-2">
                   <Calendar className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                   {t('opening_hours_section')}
                 </h4>
                 <div className="space-y-3">
-                  {Object.entries(formData.settings.business_hours)
-                    .sort(([dayA], [dayB]) => {
-                      const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-                      return dayOrder.indexOf(dayA) - dayOrder.indexOf(dayB);
-                    })
-                    .map(([day, hours]) => (
+                  {/* Usamos un array fijo para evitar errores de ordenamiento y mutación */}
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
+                    const hours = formData.settings.business_hours[day];
+                    
+                    // Seguridad: si el día no existe en el objeto, no renderizamos nada
+                    if (!hours) return null;
+          
+                    return (
                       <div key={day} className="bg-white rounded-lg p-3 md:p-4 border border-blue-200 hover:border-blue-300 transition-all">
                         <div className="flex flex-col md:flex-row md:items-center gap-4">
                           <div className="flex items-center gap-3 md:w-40">
@@ -920,10 +894,9 @@ export const RestaurantSettings: React.FC = () => {
                               {t(day)}
                             </label>
                           </div>
-                
+          
                           {hours.is_open ? (
                             <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 w-full">
-                              {/* Hora de apertura */}
                               <div className="flex-1 w-full">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">
                                   {t('hours_open_label')}
@@ -931,17 +904,11 @@ export const RestaurantSettings: React.FC = () => {
                                 <input
                                   type="time"
                                   value={hours.open}
-                                  onChange={(e) =>
-                                    updateFormData(`settings.business_hours.${day}.open`, e.target.value)
-                                  }
+                                  onChange={(e) => updateFormData(`settings.business_hours.${day}.open`, e.target.value)}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                                 />
                               </div>
-                
-                              {/* Separador */}
                               <div className="text-gray-400 text-center md:mt-5">—</div>
-                
-                              {/* Hora de cierre */}
                               <div className="flex-1 w-full">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">
                                   {t('hours_close_label')}
@@ -949,9 +916,7 @@ export const RestaurantSettings: React.FC = () => {
                                 <input
                                   type="time"
                                   value={hours.close}
-                                  onChange={(e) =>
-                                    updateFormData(`settings.business_hours.${day}.close`, e.target.value)
-                                  }
+                                  onChange={(e) => updateFormData(`settings.business_hours.${day}.close`, e.target.value)}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                                 />
                               </div>
@@ -963,9 +928,12 @@ export const RestaurantSettings: React.FC = () => {
                           )}
                         </div>
                       </div>
-                    ))}
-                </div> 
+                    );
+                  })}
+                </div>
               </div>
+              
+              {/* Info Box */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-start gap-2">
                   <Clock className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
