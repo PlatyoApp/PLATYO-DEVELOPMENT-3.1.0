@@ -440,8 +440,8 @@ export const RestaurantDashboard: React.FC<{ onTabChange: (tabId: string) => voi
             </div> 
 
             <button
-              onClick={() => onTabChange?.('/subscription')} // El "?" evita errores si la función no llega
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              onClick={() => onTabChange('subscription')}
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
             >
               Administrar Suscripción →
             </button>
