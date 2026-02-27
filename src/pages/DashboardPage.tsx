@@ -49,7 +49,7 @@ export const DashboardPage: React.FC = () => {
     } else {
       switch (activeTab) {
         case 'dashboard':
-          return <RestaurantDashboard />;
+          return <RestaurantDashboard onTabChange={setActiveTab} />;
         case 'menu':
           return <MenuManagement />;
         case 'categories':
