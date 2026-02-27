@@ -900,66 +900,70 @@ export const RestaurantSettings: React.FC = () => {
                   {t('opening_hours_section')}
                 </h4>
                 <div className="space-y-3">
-                  {Object.entries(formData.settings.business_hours).map(([day, hours]) => (
-                    <div key={day} className="bg-white rounded-lg p-3 md:p-4 border border-blue-200 hover:border-blue-300 transition-all">
-                      <div className="flex flex-col md:flex-row md:items-center gap-4">
-                        <div className="flex items-center gap-3 md:w-40">
-                          <input
-                            type="checkbox"
-                            checked={hours.is_open}
-                            onChange={(e) => updateFormData(`settings.business_hours.${day}.is_open`, e.target.checked)}
-                            className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            id={`${day}-checkbox`}
-                          />
-                          <label htmlFor={`${day}-checkbox`} className="text-sm font-semibold text-gray-900 capitalize cursor-pointer">
-                            {t(day)}
-                          </label>
-                        </div>
-
-                        {hours.is_open ? (
-                        <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 w-full">
-                          {/* Hora de apertura */}
-                          <div className="flex-1 w-full">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                              {t('hours_open_label')}
-                            </label>
+                  {Object.entries(formData.settings.business_hours)
+                    .sort(([dayA], [dayB]) => {
+                      const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                      return dayOrder.indexOf(dayA) - dayOrder.indexOf(dayB);
+                    })
+                    .map(([day, hours]) => (
+                      <div key={day} className="bg-white rounded-lg p-3 md:p-4 border border-blue-200 hover:border-blue-300 transition-all">
+                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                          <div className="flex items-center gap-3 md:w-40">
                             <input
-                              type="time"
-                              value={hours.open}
-                              onChange={(e) =>
-                                updateFormData(`settings.business_hours.${day}.open`, e.target.value)
-                              }
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                              type="checkbox"
+                              checked={hours.is_open}
+                              onChange={(e) => updateFormData(`settings.business_hours.${day}.is_open`, e.target.checked)}
+                              className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              id={`${day}-checkbox`}
                             />
-                          </div>
-                        
-                          {/* Separador */}
-                          <div className="text-gray-400 text-center md:mt-5">—</div>
-                        
-                          {/* Hora de cierre */}
-                          <div className="flex-1 w-full">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                              {t('hours_close_label')}
+                            <label htmlFor={`${day}-checkbox`} className="text-sm font-semibold text-gray-900 capitalize cursor-pointer">
+                              {t(day)}
                             </label>
-                            <input
-                              type="time"
-                              value={hours.close}
-                              onChange={(e) =>
-                                updateFormData(`settings.business_hours.${day}.close`, e.target.value)
-                              }
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                            />
                           </div>
+                
+                          {hours.is_open ? (
+                            <div className="flex flex-col md:flex-row md:items-center gap-3 flex-1 w-full">
+                              {/* Hora de apertura */}
+                              <div className="flex-1 w-full">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  {t('hours_open_label')}
+                                </label>
+                                <input
+                                  type="time"
+                                  value={hours.open}
+                                  onChange={(e) =>
+                                    updateFormData(`settings.business_hours.${day}.open`, e.target.value)
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                />
+                              </div>
+                
+                              {/* Separador */}
+                              <div className="text-gray-400 text-center md:mt-5">—</div>
+                
+                              {/* Hora de cierre */}
+                              <div className="flex-1 w-full">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  {t('hours_close_label')}
+                                </label>
+                                <input
+                                  type="time"
+                                  value={hours.close}
+                                  onChange={(e) =>
+                                    updateFormData(`settings.business_hours.${day}.close`, e.target.value)
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex-1">
+                              <Badge variant="gray">{t('closed')}</Badge>
+                            </div>
+                          )}
                         </div>
-
-                        ) : (
-                          <div className="flex-1">
-                            <Badge variant="gray">{t('closed')}</Badge>
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
 
