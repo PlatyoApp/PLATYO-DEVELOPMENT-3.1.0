@@ -438,7 +438,7 @@ export const RestaurantDashboard: React.FC = () => {
               <span>El plan termina: {new Date(status.endDate).toLocaleDateString()}</span>
             </div> 
             <a
-              href="/subscription"
+              href="SubscriptionPlans.tsx"
               className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
             >
               Administrar Suscripción →
