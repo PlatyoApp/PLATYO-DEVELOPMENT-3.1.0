@@ -438,11 +438,22 @@ export const RestaurantDashboard: React.FC = () => {
               <span>El plan termina: {new Date(status.endDate).toLocaleDateString()}</span>
             </div> 
             <a
-              href="SubscriptionPlans.tsx"
+              href=""
               className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
             >
               Administrar Suscripción →
             </a>
+            <a
+  onClick={(e) => {
+    e.preventDefault(); // Evita que el navegador intente navegar
+    onTabChange('subscription');
+    onClose();
+  }}
+  className="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+>
+  Suscripciones
+  <Eye className="w-4 h-4 flex-shrink-0" />
+</a>
           </div>
         </div>
       )}  
