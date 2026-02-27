@@ -444,6 +444,12 @@ export const RestaurantDashboard: React.FC = () => {
             >
               Administrar Suscripción →
             </a>
+            <Link
+              to="/restaurant/subscriptions" 
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1"
+            >
+              Administrar Suscripción →
+            </Link>
           </div>
         </div>
       )}  
