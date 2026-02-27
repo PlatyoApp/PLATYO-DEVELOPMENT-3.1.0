@@ -445,7 +445,6 @@ export const RestaurantDashboard: React.FC = () => {
             >
               Administrar Suscripción →
             </a>
-
             
           </div>
         </div>
